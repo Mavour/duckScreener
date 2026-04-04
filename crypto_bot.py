@@ -1633,7 +1633,7 @@ def openrouter_chat(prompt: str, system: str = "You are a helpful crypto analyst
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.7,
-        "max_tokens": 2000,  # Increased for detailed analysis
+        "max_tokens": 4000,  # Increased for full analysis
     }
     max_retries = 3
     for attempt in range(max_retries):
