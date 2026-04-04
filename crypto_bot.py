@@ -102,7 +102,8 @@ GMGN_API_URL = "https://gmgn.ai/defi/quotation/v1/rank"
 
 # Backtest Configuration
 BACKTEST_ENABLED = os.getenv("BACKTEST_ENABLED", "true").lower() == "true"
-BACKTEST_INTERVAL_HOURS = int(os.getenv("BACKTEST_INTERVAL_HOURS", "24"))  # Check every 24 hours
+BACKTEST_HOUR = int(os.getenv("BACKTEST_HOUR", "22"))  # Default 10 PM
+BACKTEST_MINUTE = int(os.getenv("BACKTEST_MINUTE", "0"))  # Default minute 0
 BACKTEST_CHAT_ID = os.getenv("BACKTEST_CHAT_ID", "")
 BACKTEST_SUCCESS_THRESHOLD = float(os.getenv("BACKTEST_SUCCESS_THRESHOLD", "10"))  # 10% gain = success
 BACKTEST_FAILURE_THRESHOLD = float(os.getenv("BACKTEST_FAILURE_THRESHOLD", "-20"))  # -20% = failure
@@ -1511,17 +1512,19 @@ def run_backtest(app):
         log_activity("BACKTEST", f"Error: {e}", "error")
 
 def run_backtest_scheduler(app):
-    """Run backtest on schedule"""
-    log_activity("BACKTEST_SCHEDULER", f"Backtest scheduler started - will run every {BACKTEST_INTERVAL_HOURS} hours")
+    """Run backtest on schedule at specified hour"""
+    if not SCHEDULE_AVAILABLE:
+        log_activity("BACKTEST_SCHEDULER", "Schedule module not available", "error")
+        return
+    
+    log_activity("BACKTEST_SCHEDULER", f"Backtest scheduled for {BACKTEST_HOUR:02d}:{BACKTEST_MINUTE:02d} WITA daily")
+    
+    # Schedule daily backtest
+    schedule.every().day.at(f"{BACKTEST_HOUR:02d}:{BACKTEST_MINUTE:02d}").do(run_backtest, app=app)
     
     while True:
-        try:
-            run_backtest(app)
-        except Exception as e:
-            log_activity("BACKTEST_SCHEDULER", f"Error: {e}", "error")
-        
-        # Sleep for configured interval
-        time.sleep(BACKTEST_INTERVAL_HOURS * 3600)
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute
 
 # Helper: Initialize Twitter/X client
 def get_twitter_client():
