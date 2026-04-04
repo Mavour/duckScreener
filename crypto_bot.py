@@ -3256,22 +3256,6 @@ def main():
     logger.info("Bot started...")
     log_activity("BOT_START", "Bot successfully started and polling for updates", "success")
     
-    # Set bot commands menu using sync approach
-    async def set_bot_commands():
-        try:
-            from telegram.error import TelegramError
-            for cmd, desc in commands:
-                try:
-                    await app.bot.set_my_commands([BotCommand(cmd, desc)])
-                except TelegramError:
-                    pass
-        except Exception as e:
-            logger.warning(f"Could not set commands menu: {e}")
-    
-    # Set commands
-    import asyncio
-    asyncio.run(set_bot_commands())
-    
     # Run with error handling for conflict
     try:
         app.run_polling()

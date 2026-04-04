@@ -6,5 +6,6 @@ python-dotenv
 schedule
 textblob
 tweepy
-pypdf2
+PyMuPDF
+pytesseract
 pillow
