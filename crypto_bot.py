@@ -2270,23 +2270,6 @@ async def sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(result, parse_mode="Markdown")
         log_activity("CMD_SENTIMENT", f"Successfully analyzed sentiment for {coin}", "success")
-                f"Analyze market sentiment for {coin} based on the following data. "
-                f"Provide:\n"
-                f"1. Overall sentiment (Bullish/Bearish/Neutral)\n"
-                f"2. Key highlights (3 important points)\n"
-                f"3. Risk factors (2 main risks)\n"
-                f"4. Brief conclusion\n\n"
-                f"Data:\n{combined_data}"
-            )
-        
-        analysis = openrouter_chat(sentiment_prompt, system="You are a crypto sentiment analyst.")
-        
-        result = translate("sentiment_result").format(coin=coin)
-        result += analysis
-        result += f"\n\n_Sumber: {len(all_data)} sources_"
-        
-        await update.message.reply_text(result, parse_mode="Markdown")
-        log_activity("CMD_SENTIMENT", f"Successfully analyzed sentiment for {coin}", "success")
         
     except Exception as e:
         await update.message.reply_text(f"Gagal analisis sentiment: {e}")
