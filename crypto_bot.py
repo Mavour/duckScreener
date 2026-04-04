@@ -2195,41 +2195,81 @@ async def sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(translate("sentiment_analyzing").format(coin=coin))
     
     try:
-        # Fetch news about the coin
-        news = fetch_latest_news(limit=10)
+        # Fetch coin-specific news from CoinGecko
+        source_links = ""
         
-        # Also try to get tweets
-        tweets_data = []
-        if TWITTER_BEARER_TOKEN and TWEEPY_AVAILABLE:
-            tweets_data = fetch_tweets(f"{coin} crypto", max_results=5)
+        # Get news from CoinGecko
+        resp = requests.get(f"{COINGECKO_NEWS_URL}?page=1", timeout=10)
+        news_items = []
+        if resp.status_code == 200:
+            data = resp.json()
+            all_news = data.get('data', [])
+            
+            # Filter news for this coin
+            coin_lower = coin.lower()
+            for item in all_news[:30]:
+                title = item.get('title', '').lower()
+                if coin_lower in title or coin_lower in item.get('description', '').lower():
+                    news_items.append(item)
+                    
+            # Collect source links
+            source_links = "📚 *Sumber:*\n"
+            for item in news_items[:5]:
+                title = item.get('title', '')[:40]
+                url = item.get('url', '')
+                if url:
+                    source_links += f"• [{title}...]({url})\n"
         
-        # Build prompt for sentiment analysis
-        all_data = []
-        if news and news not in ["No recent news found.", "Failed to fetch news."]:
-            all_data.append(f"=== NEWS ===\n{news}")
-        if tweets_data:
-            tweets_text = "\n".join([f"- @{t['author']}: {t['text'][:200]}" for t in tweets_data])
-            all_data.append(f"=== TWEETS ===\n{tweets_text}")
+        if not news_items:
+            # If no specific news, try search
+            news = fetch_latest_news(limit=10)
+            if news and "No recent news" not in news:
+                news_items = [{"title": "General crypto news", "description": news[:500]}]
         
-        if not all_data:
-            await update.message.reply_text(f"Tidak ada news atau tweet untuk {coin}.")
+        if not news_items:
+            await update.message.reply_text(f"Tidak ada news untuk {coin}. Coba nama lain.")
             return
         
-        combined_data = "\n\n".join(all_data)
+        # Build news text for analysis
+        news_text = "\n".join([
+            f"• {item.get('title', '')[:150]}\n  {item.get('description', '')[:200]}..."
+            for item in news_items[:5]
+        ])
         
         # Analyze sentiment
         if BOT_LANGUAGE == "id":
             sentiment_prompt = (
-                f"Analisis sentiment market untuk {coin} berdasarkan data berikut. "
+                f"Analisis sentiment market untuk coin '{coin}' berdasarkan news berikut. "
+                f"WAJIB: Hanya fokus ke coin '{coin}', jangan bicara coin lain seperti XRP, BTC, ETH kecuali ada hubungannya langsung dengan '{coin}'. "
                 f"Berikan:\n"
                 f"1. Overall sentiment (Bullish/Bearish/Neutral)\n"
-                f"2. Key highlights (3 poin penting)\n"
-                f"3. Risk factors (2 risiko utama)\n"
+                f"2. Key highlights (3 poin penting) - hanya yang berkaitan dengan '{coin}'\n"
+                f"3. Risk factors (2 risiko utama) - hanya untuk '{coin}'\n"
                 f"4. Kesimpulan singkat\n\n"
-                f"Data:\n{combined_data}"
+                f"News:\n{news_text}"
             )
         else:
             sentiment_prompt = (
+                f"Analyze market sentiment for '{coin}' based on the following news. "
+                f"IMPORTANT: Only focus on '{coin}', do not mention other coins unless directly related. "
+                f"Provide:\n"
+                f"1. Overall sentiment (Bullish/Bearish/Neutral)\n"
+                f"2. Key highlights (3 important points) - only related to '{coin}'\n"
+                f"3. Risk factors (2 main risks) - only for '{coin}'\n"
+                f"4. Brief conclusion\n\n"
+                f"News:\n{news_text}"
+            )
+        
+        analysis = openrouter_chat(sentiment_prompt, system="You are a crypto sentiment analyst.")
+        
+        result = translate("sentiment_result").format(coin=coin)
+        result += analysis
+        
+        if source_links:
+            result += f"\n\n{source_links}"
+        
+        await update.message.reply_text(result, parse_mode="Markdown")
+        log_activity("CMD_SENTIMENT", f"Successfully analyzed sentiment for {coin}", "success")
                 f"Analyze market sentiment for {coin} based on the following data. "
                 f"Provide:\n"
                 f"1. Overall sentiment (Bullish/Bearish/Neutral)\n"
