@@ -2870,14 +2870,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("🐦 Link Twitter/X detected! Mengambil dan menganalisa...")
             
             try:
-                # Extract tweet ID from link
+                # Extract tweet info from URL
                 tweet_id = None
+                username = None
+                
+                # Parse URL to get username and tweet_id
                 if "/status/" in text:
                     parts = text.split("/status/")
                     if len(parts) > 1:
                         tweet_id = parts[-1].split("?")[0]
+                    # Extract username from URL
+                    path_parts = text.split("/")
+                    for i, p in enumerate(path_parts):
+                        if p == "status" and i > 0:
+                            username = path_parts[i-1]
+                            break
                 
-                # Get tweet content
+                # Get tweet content if we have API
                 tweet_content = ""
                 if tweet_id and TWITTER_BEARER_TOKEN and TWEEPY_AVAILABLE:
                     try:
@@ -2886,14 +2895,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if tweet.data:
                             tweet_content = f"Tweet by @{tweet.data.username}: {tweet.data.text}"
                     except Exception as tw_e:
-                        log_activity("MSG_TWITTER_LINK", f"API error, using fallback: {tw_e}", "warning")
+                        log_activity("MSG_TWITTER_LINK", f"API error: {tw_e}", "warning")
                 
-                # Fallback: Just note the link for now
+                # Try web scraping as fallback
+                if not tweet_content and "/status/" in text:
+                    try:
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                        resp = requests.get(text, headers=headers, timeout=10)
+                        if resp.status_code == 200:
+                            html = resp.text
+                            # Try to find tweet content in HTML
+                            import re
+                            # Look for meta tags or data attributes
+                            content_match = re.search(r'"text":"([^"]+)"', html)
+                            if content_match:
+                                tweet_content = content_match.group(1).replace('\\n', '\n')
+                            if not tweet_content:
+                                # Try alternative pattern
+                                meta_match = re.search(r'<meta name="description" content="([^"]+)"', html)
+                                if meta_match:
+                                    tweet_content = meta_match.group(1)
+                    except Exception as scrape_e:
+                        log_activity("MSG_TWITTER_LINK", f"Scraping error: {scrape_e}", "warning")
+                
+                # Fallback: Ask user for tweet content
                 if not tweet_content:
-                    tweet_content = f"Link: {text}\n\n(Catatan: Untuk full tweet content perlu Twitter API key dengan elevated access)"
+                    if username and tweet_id:
+                        tweet_content = f"""📝 *Info Tweet:*
+• Username: @{username}
+• Tweet ID: {tweet_id}
+• Link: {text}
+
+⚠️ Saya tidak dapat mengambil konten tweet langsung. 
+Silakan copy-paste isi tweet nya di sini agar saya bisa analisa!"""
+                    else:
+                        tweet_content = f"Link: {text}\n\n⚠️ Silakan share isi tweet nya langsung untuk analisa."
                 
                 # Store in knowledge base
                 store_knowledge(f"twitter:{text}", tweet_content)
+                
+                # If we don't have actual tweet content, ask user
+                if "saya tidak dapat" in tweet_content.lower() or "silakan" in tweet_content.lower() or "cannot" in tweet_content.lower():
+                    if BOT_LANGUAGE == "id":
+                        await msg.reply_text(tweet_content, parse_mode="Markdown")
+                    else:
+                        await msg.reply_text(tweet_content)
+                    log_activity("MSG_TWITTER_LINK", "No tweet content, asked user for input", "success")
+                    return
                 
                 # Analyze with AI
                 if BOT_LANGUAGE == "id":
