@@ -1676,13 +1676,16 @@ def openrouter_chat(prompt: str, system: str = "You are a helpful crypto analyst
             else:
                 logger.error(f"OpenRouter error after {max_retries} attempts: {e}")
                 log_activity("LLM_CALL", f"OpenRouter error after {max_retries} attempts: {e}", "error")
-                return "Sorry, I couldn't process that request."
+                # Return a helpful message about API issue
+                if "401" in str(e) or "Unauthorized" in str(e):
+                    return "⚠️ OpenRouter API key tidak valid atau expired. Silakan cek API key di .env file."
+                return "⚠️ LLM service sedang unavailable. Coba lagi nanti."
         except (KeyError, IndexError, ValueError) as e:
             # JSON parsing errors or unexpected structure
             logger.error(f"OpenRouter response parsing error: {e}")
             logger.debug(f"OpenRouter raw response: {resp.text if 'resp' in locals() else 'no response'}")
             log_activity("LLM_CALL", f"Response parsing error: {e}", "error")
-            return "Sorry, I couldn't process that request."
+            return "⚠️ Error parsing response. Coba lagi nanti."
 
 # Scheduled daily news function
 def send_daily_news():
@@ -1972,6 +1975,14 @@ async def wallet_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     msg += f"📈 Recent transactions: {activity['recent_txs']}\n"
     
+    # Get context from knowledge base about this wallet's previous activities
+    wallet_knowledge = search_knowledge(wallet[:20], limit=5)
+    if wallet_knowledge:
+        msg += f"\n📚 *Riwayat dari Knowledge Base:*\n"
+        for kb in wallet_knowledge[:3]:
+            text = kb['text'][:100]
+            msg += f"• {text}...\n"
+    
     # Add token details
     if activity.get('token_details'):
         msg += "\n🪙 *Tokens Traded:*\n"
@@ -1979,11 +1990,27 @@ async def wallet_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
             symbol = token.get('symbol', '?')
             name = token.get('name', '')
             price = token.get('price', '0')
+            liquidity = token.get('liquidity', 0)
             
             if price and price != '0':
-                msg += f"• {symbol}: ${float(price):.6f}\n"
+                msg += f"• {symbol}: ${float(price):.6f}"
+                if liquidity:
+                    msg += f" (liq: ${liquidity/1000:.1f}K)"
+                msg += "\n"
             else:
                 msg += f"• {symbol}\n"
+        
+        # Provide analysis based on tokens traded
+        if len(activity['token_details']) > 0:
+            msg += "\n💡 *Analisa:*\n"
+            tokens = [t.get('symbol', '?') for t in activity['token_details']]
+            if len(tokens) > 1:
+                msg += f"Wallet ini aktif trading {len(tokens)} token berbeda. "
+                msg += f"Token: {', '.join(tokens[:3])}. "
+                msg += "Indikasi: diversified trading atau arbitrage.\n"
+            else:
+                msg += f"Wallet fokus ke {tokens[0]}. "
+                msg += "Holding atau accumulation pattern.\n"
     else:
         msg += "\n❓ Tidak ada token terdeteksi (mungkin hanya transfer SOL)"
     
