@@ -3257,43 +3257,20 @@ def main():
     log_activity("BOT_START", "Bot successfully started and polling for updates", "success")
     
     # Set bot commands menu using sync approach
-    def set_bot_commands():
+    async def set_bot_commands():
         try:
-            bot = app.bot
-            commands = [
-                BotCommand("start", "🏠 Menu Utama / Help"),
-                BotCommand("summary", "📰 News Harian"),
-                BotCommand("sentiment", "📊 Analisis Sentiment"),
-                BotCommand("screen", "💎 Screening Coin"),
-                BotCommand("scan", "🔍 Scan Gems"),
-                BotCommand("memecoin", "🐕 Trending Memecoin"),
-                BotCommand("gmgn", "💎 GMGN Scanner"),
-                BotCommand("solana", "🐋 Solana Activity"),
-                BotCommand("wallet_analyze", "👛 Analisa Wallet"),
-                BotCommand("wallet_scan", "🔄 Scan Semua Wallet"),
-                BotCommand("wallet_list", "📝 List Wallet"),
-                BotCommand("wallet_add", "➕ Tambah Wallet"),
-                BotCommand("tweets", "🐦 Tweets/X"),
-                BotCommand("learn", "📚 Learn PDF/Link"),
-                BotCommand("memory", "🧠 Knowledge Base"),
-                BotCommand("search", "🔎 Cari di KB"),
-                BotCommand("backtest", "📈 Cek Performa"),
-                BotCommand("health", "💚 Status Bot"),
-                BotCommand("set_lang", "🌐 Ganti Bahasa"),
-            ]
-            # Use sync call
-            from telegram.request import RequestParameter
-            import json
-            # Get bot info first to get chat_id for commands
-            resp = bot._request.post(f"{bot.token}/getMe", {}, None)
-            bot_id = resp['id']
-            bot._request.post(f"{bot.token}/setMyCommands", 
-                            {'commands': [(c.command, c.description) for c in commands]},
-                            None)
+            from telegram.error import TelegramError
+            for cmd, desc in commands:
+                try:
+                    await app.bot.set_my_commands([BotCommand(cmd, desc)])
+                except TelegramError:
+                    pass
         except Exception as e:
             logger.warning(f"Could not set commands menu: {e}")
     
-    set_bot_commands()
+    # Set commands
+    import asyncio
+    asyncio.run(set_bot_commands())
     
     # Run with error handling for conflict
     try:

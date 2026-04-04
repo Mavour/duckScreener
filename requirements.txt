@@ -4,3 +4,7 @@ httpcore==0.15.0
 requests
 python-dotenv
 schedule
+textblob
+tweepy
+pypdf2
+pillow
