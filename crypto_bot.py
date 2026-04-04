@@ -2897,6 +2897,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception as tw_e:
                         log_activity("MSG_TWITTER_LINK", f"API error: {tw_e}", "warning")
                 
+                # Try OEmbed API - free and public!
+                if not tweet_content and "/status/" in text:
+                    try:
+                        oembed_url = f"https://publish.twitter.com/oembed?url={text}"
+                        resp = requests.get(oembed_url, timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            html_content = data.get('html', '')
+                            # Extract text from embedded HTML
+                            import re
+                            # Remove HTML tags to get plain text
+                            clean_text = re.sub(r'<[^>]+>', '', html_content)
+                            # Clean up
+                            clean_text = clean_text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                            if clean_text and len(clean_text) > 10:
+                                tweet_content = f"Tweet embed:\n{clean_text}"
+                                log_activity("MSG_TWITTER_LINK", "Got tweet via OEmbed!", "success")
+                    except Exception as oembed_e:
+                        log_activity("MSG_TWITTER_LINK", f"OEmbed error: {oembed_e}", "warning")
+                
                 # Try web scraping as fallback
                 if not tweet_content and "/status/" in text:
                     try:
