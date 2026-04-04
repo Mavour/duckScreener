@@ -2990,10 +2990,27 @@ Silakan copy-paste isi tweet nya di sini agar saya bisa analisa!"""
                 
                 analysis = openrouter_chat(agent_prompt, system="You are a crypto analyst expert.")
                 
-                if BOT_LANGUAGE == "id":
-                    await msg.reply_text(f"🐦 *Analisa Tweet/X*\n\n{analysis}", parse_mode="Markdown")
+                # Split long analysis into chunks if needed
+                max_msg_len = 4000
+                if len(analysis) > max_msg_len:
+                    # Split by sections
+                    parts = analysis.split("📌")
+                    if len(parts) > 1:
+                        for i, part in enumerate(parts):
+                            if part.strip():
+                                msg_text = f"🐦 *Analisa Tweet/X*\n\n📌{part}"
+                                if i > 0:
+                                    msg_text = f"📌{part}"
+                                await msg.reply_text(msg_text[:max_msg_len], parse_mode="Markdown")
+                    else:
+                        # Split by chunks
+                        for i in range(0, len(analysis), max_msg_len):
+                            await msg.reply_text(analysis[i:i+max_msg_len], parse_mode="Markdown")
                 else:
-                    await msg.reply_text(f"🐦 *Tweet/X Analysis*\n\n{analysis}", parse_mode="Markdown")
+                    if BOT_LANGUAGE == "id":
+                        await msg.reply_text(f"🐦 *Analisa Tweet/X*\n\n{analysis}", parse_mode="Markdown")
+                    else:
+                        await msg.reply_text(f"🐦 *Tweet/X Analysis*\n\n{analysis}", parse_mode="Markdown")
                 
                 log_activity("MSG_TWITTER_LINK", "Successfully analyzed Twitter/X link", "success")
             except Exception as e:
