@@ -418,44 +418,58 @@ async def create_agent(update, context):
 
 async def memory(update, context):
     await update.message.reply_chat_action(action="typing")
-    status_msg = await update.message.reply_text("\U0001F9E0 Loading knowledge base...")
+    status_msg = await update.message.reply_text("\U0001F9E0 Memproses pengetahuan yang sudah dipelajari...")
     total = count_knowledge()
     if total == 0:
-        await status_msg.edit_text("\U0001F9E0 Knowledge base is empty.")
+        await status_msg.edit_text("\U0001F9E0 Knowledge base masih kosong. Kirim PDF, link YouTube, atau tweet untuk saya pelajari.")
         return
 
     try:
-        count = int(context.args[0]) if context.args else 5
-        count = max(1, min(20, count))
+        count = int(context.args[0]) if context.args else 10
+        count = max(1, min(30, count))
     except ValueError:
-        count = 5
+        count = 10
 
     items = get_recent_knowledge(count)
-    lines = ["\U0001F9E0 Memory entries (latest first):\n"]
+
+    # Build context for AI to synthesize
+    knowledge_context = ""
     for i, item in enumerate(items):
-        import time
-        ts = time.strftime('%Y-%m-%d %H:%M', time.localtime(item['timestamp']))
-        preview = item['text'][:200].replace('\n', ' ')
-        source = item['source']
+        source_type = item['source'].split(':')[0]
+        preview = item['text'][:500]
+        knowledge_context += f"[{source_type}] {preview}\n\n"
 
-        if source.startswith('pdf:'):
-            emoji = "\U0001F4C4"
-        elif source.startswith('youtube:'):
-            emoji = "\U0001F4FA"
-        elif source.startswith('twitter:') or source.startswith('tweet:'):
-            emoji = "\U0001F426"
-        elif source.startswith('user:'):
-            emoji = "\U0001F4AC"
-        elif source.startswith('reflection:'):
-            emoji = "\U0001F914"
-        else:
-            emoji = "\U0001F4D6"
+    if BOT_LANGUAGE == "id":
+        prompt = (
+            f"Kamu adalah AI crypto assistant. Berikut adalah materi yang sudah kamu pelajari:\n\n"
+            f"{knowledge_context}\n\n"
+            f"Buatlah rangkuman natural dalam bahasa Indonesia yang mencakup:\n"
+            f"1. Topik utama yang kamu pelajari\n"
+            f"2. Insight/pelajaran kunci dari setiap materi\n"
+            f"3. Pola atau tema yang kamu notice dari semua materi\n"
+            f"4. Bagaimana pengetahuan ini bisa membantu dalam trading/crypto analysis\n\n"
+            f"Jawab seperti kamu sedang bercerita tentang pengalaman belajar kamu, bukan seperti bot yang menampilkan data. "
+            f"Gunakan bahasa yang natural dan conversational."
+        )
+    else:
+        prompt = (
+            f"You are an AI crypto assistant. Here is what you have learned:\n\n"
+            f"{knowledge_context}\n\n"
+            f"Create a natural summary covering:\n"
+            f"1. Main topics you learned\n"
+            f"2. Key insights from each material\n"
+            f"3. Patterns or themes you noticed\n"
+            f"4. How this knowledge helps with trading/crypto analysis\n\n"
+            f"Answer like you're sharing your learning experience, not like a bot displaying data. "
+            f"Use natural, conversational language."
+        )
 
-        safe_source = source.replace('_', '').replace('*', '').replace('`', '').replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-        lines.append(f"{emoji} {i+1}. [{ts}] `{safe_source}`\n{preview}...")
+    import asyncio
+    loop = asyncio.get_event_loop()
+    summary = await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system="You are a reflective AI assistant sharing your learning journey."))
 
     from duckscreeener.utils.message_split import send_long_message
-    await send_long_message("\n\n".join(lines), update)
+    await status_msg.edit_text(summary)
 
 
 async def health(update, context):
@@ -991,33 +1005,42 @@ async def handle_message(update, context):
         from duckscreeener.db.database import get_user_language
         user_lang = get_user_language(user_id)
 
+        # Get recent knowledge as context, not as raw dump
         recent = get_recent_knowledge(5)
-        history = "\n".join([f"- {item['source']}: {item['text'][:200]}" for item in recent])
+        knowledge_context = ""
+        if recent:
+            knowledge_context = "Berikut konteks dari materi yang sudah saya pelajari:\n"
+            for item in recent:
+                source_type = item['source'].split(':')[0]
+                knowledge_context += f"- [{source_type}] {item['text'][:300]}...\n"
 
         if user_lang == "id":
             prompt = (
-                f"Kamu adalah AI crypto assistant yang ngobrol natural seperti teman diskusi.\n"
-                f"Jawab pertanyaan user dengan santai tapi informatif.\n"
-                f"Gunakan data dari knowledge base kalau relevan, tapi jangan terlalu kaku.\n"
-                f"Kalau user tanya tentang pengalaman belajar kamu, ceritakan dari data yang ada.\n\n"
-                f"Data terakhir yang dipelajari:\n{history}\n\n"
+                f"Kamu adalah AI crypto assistant yang ngobrol natural seperti teman diskusi yang berpengalaman.\n\n"
+                f"{knowledge_context}\n\n"
                 f"Pertanyaan user: {text}\n\n"
-                f"Jawab dalam bahasa Indonesia yang natural, seperti ngobrol biasa. "
-                f"Jangan sebutkan 'code' atau 'function'. Jangan jawab seperti bot."
+                f"Jawab dengan:\n"
+                f"1. Natural dan conversational — seperti ngobrol biasa\n"
+                f"2. Kalau relevan, gunakan insight dari knowledge base sebagai referensi\n"
+                f"3. Berikan penalaran dan kesimpulan sendiri, bukan cuma kutip data\n"
+                f"4. Kalau tidak tahu, bilang jujur\n"
+                f"5. Jangan sebutkan 'code', 'function', atau 'database'\n\n"
+                f"RESPOND ENTIRELY IN INDONESIAN."
             )
-            system_msg = "Kamu adalah AI crypto assistant yang ngobrol natural, bukan bot kaku. Jawab seperti teman diskusi yang berpengalaman di crypto."
+            system_msg = "Kamu adalah AI crypto assistant yang berpikir dan menyimpulkan sendiri. Kamu punya pengalaman belajar dari berbagai materi dan bisa memberikan insight berdasarkan penalaran, bukan cuma data mentah."
         else:
             prompt = (
-                f"You are a crypto AI assistant that chats naturally like a discussion partner.\n"
-                f"Answer the user's question casually but informatively.\n"
-                f"Use knowledge base data if relevant, but don't be too rigid.\n"
-                f"If user asks about your learning experience, tell them from the data you have.\n\n"
-                f"Recent knowledge:\n{history}\n\n"
+                f"You are a crypto AI assistant that chats naturally like an experienced discussion partner.\n\n"
+                f"{knowledge_context}\n\n"
                 f"User question: {text}\n\n"
-                f"Answer naturally, like a normal conversation. "
-                f"Don't mention 'code' or 'function'. Don't answer like a bot."
+                f"Answer with:\n"
+                f"1. Natural and conversational — like a normal chat\n"
+                f"2. If relevant, use knowledge base insights as reference\n"
+                f"3. Provide your own reasoning and conclusions, not just data quotes\n"
+                f"4. If you don't know, say so honestly\n"
+                f"5. Don't mention 'code', 'function', or 'database'\n"
             )
-            system_msg = "You are a crypto AI assistant that chats naturally, not a stiff bot. Answer like an experienced crypto discussion partner."
+            system_msg = "You are a crypto AI assistant that thinks and concludes on its own. You have learning experience from various materials and can provide insights based on reasoning, not just raw data."
 
         import asyncio
         loop = asyncio.get_event_loop()
