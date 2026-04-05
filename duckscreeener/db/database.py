@@ -368,9 +368,13 @@ def save_setting(key, value):
 
 
 def load_setting(key, default=None):
+    init_db()
     db = get_db()
-    row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return row[0] if row else default
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+    except Exception:
+        return default
 
 
 def load_list_setting(key, default=None):

@@ -8,8 +8,8 @@ from duckscreeener.db.database import get_db
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL = "nomic-ai/nomic-embed-text-v1.5:free"
-EMBEDDING_DIM = 768
+EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+EMBEDDING_DIM = 1024
 _last_embedding_time = 0
 _embedding_cooldown = 10
 
