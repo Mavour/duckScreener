@@ -115,7 +115,8 @@ def run_gmgn_scanner():
 
                     safety = "" if not alert.get('is_honeypot') else "HONEYPOT"
 
-                    message += f"[{alert['rating']}] Score: {alert['score']}\n"
+                    rating_emoji = "" if alert['rating'] == 'HIGH' else ("⚡" if alert['rating'] == 'MEDIUM' else "📊")
+                    message += f"{rating_emoji} [{alert['rating']}] Score: {alert['score']}\n"
                     message += f"*{alert['name']} ({alert['symbol']})*\n"
                     message += f"Price: {price_str} | 1h: {'+' if alert['price_change_1h'] > 0 else ''}{alert['price_change_1h']:.1f}%\n"
                     message += f"Age: {alert['age_hours']:.1f}h | Vol: {volume_str} | Liq: {liquidity_str}\n"

@@ -205,11 +205,13 @@ def run_backtest(chat_id=None):
             source = sig.get('source_type', '?')
             sig_type = sig.get('signal_type', '')
 
+            status_emoji = "" if status == "SUCCESS" else ("" if status == "FAILED" else "⏳")
+
             if source not in report_by_source:
                 report_by_source[source] = []
 
             report_by_source[source].append(
-                f"*{symbol}* ({ts}) [{sig_type}]\n"
+                f"{status_emoji} *{symbol}* ({ts}) [{sig_type}]\n"
                 f"Entry: {entry_str} -> Current: {current_str}\n"
                 f"Change: {'+' if change_pct > 0 else ''}{change_pct:.1f}% - {status}"
             )
@@ -241,6 +243,12 @@ def run_backtest(chat_id=None):
             report += "\n"
 
         # Grouped signals by source
+        source_labels = {
+            'scan': "CEX Spot — Whale Accumulation",
+            'memecoin': "Memecoin — New Launch",
+            'gmgn': "GMGN — Smart Money",
+            'solana': "Solana — On-Chain",
+        }
         for source, lines in report_by_source.items():
             label = source_labels.get(source, source.upper())
             report += f"── {label} ──\n"

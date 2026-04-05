@@ -297,7 +297,8 @@ async def memecoin(update, context):
     message += "Scanning for coins BEFORE they pump\n\n"
 
     for coin in new_coins[:5]:
-        message += f"[{coin['rating']}] Score: {coin['score']}\n"
+        rating_emoji = "" if coin['rating'] == 'HIGH' else ("⚡" if coin['rating'] == 'MEDIUM' else "📊")
+        message += f"{rating_emoji} [{coin['rating']}] Score: {coin['score']}\n"
         message += f"{coin['name']} ({coin['symbol']})\n"
         price_str = f"${coin['price']:.8f}" if coin['price'] < 0.001 else f"${coin['price']:.6f}"
         message += f"Price: {price_str} | 1h: {'+' if coin['price_change_1h'] > 0 else ''}{coin['price_change_1h']:.1f}%\n"
@@ -702,7 +703,8 @@ async def scan_coins(update, context):
         vm_ratio = gem.get('vol_mcap_ratio', 0)
         ath_drop = gem.get('ath_drop', 0)
 
-        message += f"{gem['gem_type']}\n"
+        emoji = ""
+        message += f"{emoji} {gem['gem_type']}\n"
         message += f"*{gem['name']} ({gem['symbol']})*\n"
         message += f"Price: {price_str} | 24h: {change_24h}\n"
         message += f"Vol: {volume_str} | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
