@@ -510,32 +510,6 @@ async def health(update, context):
     )
 
 
-async def search(update, context):
-    await update.message.reply_chat_action(action="typing")
-    if not context.args:
-        await update.message.reply_text(translate("search_usage"))
-        return
-    query = " ".join(context.args)
-    status_msg = await update.message.reply_text(f"\U0001F50D Searching for '{query}'...")
-
-    from duckscreeener.db.vector_search import search_semantic
-    results = search_semantic(query, limit=5)
-
-    if not results:
-        await status_msg.edit_text(translate("search_no_results"))
-        return
-
-    lines = [translate("search_results").format(query=query)]
-    for i, item in enumerate(results):
-        preview = item['text'][:500].replace('\n', ' ')
-        sim = item.get('similarity')
-        sim_str = f" ({sim:.2f})" if sim is not None else ""
-        lines.append(f"{i+1}. [{item['source']}]{sim_str} {preview}...")
-
-    from duckscreeener.utils.message_split import send_long_message
-    await send_long_message("\n\n".join(lines), update)
-
-
 async def set_lang(update, context):
     user_id = update.effective_user.id
     if not context.args:

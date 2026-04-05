@@ -17,7 +17,7 @@ from duckscreeener.config.settings import (
 from duckscreeener.db.database import init_db
 from duckscreeener.handlers.commands import (
     start, summary, memecoin, memecoin_ai, learn, create_agent,
-    set_lang, search,
+    set_lang,
     wallet_list, wallet_add, wallet_remove, wallet_analyze, wallet_scan,
     memory, health, scan_coins,
     run_backtest_command, handle_message,
@@ -204,7 +204,6 @@ def main():
             BotCommand("wallet_remove", "Hapus Wallet"),
             BotCommand("learn", "Learn PDF/Link"),
             BotCommand("memory", "Knowledge Base"),
-            BotCommand("search", "Cari di KB"),
             BotCommand("backtest", "Cek Performa"),
             BotCommand("health", "Status Bot"),
             BotCommand("set_lang", "Ganti Bahasa"),
@@ -238,7 +237,6 @@ def main():
     app.add_handler(CommandHandler("set_lang", set_lang))
     app.add_handler(CommandHandler("learn", learn))
     app.add_handler(CommandHandler("create_agent", create_agent))
-    app.add_handler(CommandHandler("search", search))
     app.add_handler(CommandHandler("backtest", run_backtest_command))
     app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO | filters.TEXT & (~filters.COMMAND), handle_message))
 
