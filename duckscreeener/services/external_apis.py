@@ -280,8 +280,24 @@ def extract_tweet_from_url(url):
                 username = path_parts[i-1]
                 break
 
-    # Try Tweepy API
-    if tweet_id and TWITTER_BEARER_TOKEN and TWEEPY_AVAILABLE:
+    # Method 1: FxTwitter API (free, no auth, most reliable)
+    if tweet_id:
+        try:
+            fx_url = f"https://api.fxtwitter.com/{username}/status/{tweet_id}"
+            resp = requests.get(fx_url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                tweet_data = data.get('tweet', {})
+                text = tweet_data.get('text', '')
+                author = tweet_data.get('author', {})
+                screen_name = author.get('screen_name', username or '?')
+                if text:
+                    tweet_content = f"Tweet by @{screen_name}:\n{text}"
+        except Exception:
+            pass
+
+    # Method 2: Tweepy API
+    if not tweet_content and tweet_id and TWITTER_BEARER_TOKEN and TWEEPY_AVAILABLE:
         try:
             client = get_twitter_client()
             tweet = client.get_tweet(tweet_id, expansions=["author_id"])
@@ -290,7 +306,7 @@ def extract_tweet_from_url(url):
         except Exception:
             pass
 
-    # Try OEmbed API
+    # Method 3: OEmbed API
     if not tweet_content and "/status/" in url:
         try:
             oembed_url = f"https://publish.twitter.com/oembed?url={url}"
@@ -305,7 +321,7 @@ def extract_tweet_from_url(url):
         except Exception:
             pass
 
-    # Try web scraping as fallback
+    # Method 4: Web scraping (last resort)
     if not tweet_content and "/status/" in url:
         try:
             headers = {

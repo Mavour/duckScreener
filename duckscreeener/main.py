@@ -18,9 +18,11 @@ from duckscreeener.db.database import init_db
 from duckscreeener.handlers.commands import (
     start, summary, memecoin, memecoin_ai,
     set_lang,
-    wallet_list, wallet_add, wallet_remove, wallet_analyze, wallet_scan,
     memory, health, scan_coins,
     run_backtest_command, handle_message,
+)
+from duckscreeener.handlers.smart_wallet_handlers import (
+    smartwallets, smartwallet_add, smartwallet_remove, smartwallet_discover,
 )
 from duckscreeener.scanners.coin_scanner import (
     scan_potential_coins, scan_gmgn_tokens,
@@ -198,12 +200,11 @@ def main():
             BotCommand("scan", "Whale Accumulation Detection"),
             BotCommand("memecoin", "New Memecoin Scanner"),
             BotCommand("memecoin_ai", "AI Memecoin Analysis"),
-            BotCommand("wallet_analyze", "Analisa Wallet"),
-            BotCommand("wallet_scan", "Scan Semua Wallet"),
-            BotCommand("wallet_list", "List Wallet"),
-            BotCommand("wallet_add", "Tambah Wallet"),
-            BotCommand("wallet_remove", "Hapus Wallet"),
-            BotCommand("memory", "Knowledge Base"),
+            BotCommand("smartwallets", "List Smart Wallets"),
+            BotCommand("smartwallet_add", "Add Smart Wallet"),
+            BotCommand("smartwallet_remove", "Remove Smart Wallet"),
+            BotCommand("smartwallet_discover", "Discover New Wallets"),
+            BotCommand("memory", "AI Rangkum Pelajaran"),
             BotCommand("backtest", "Cek Performa"),
             BotCommand("health", "Status Bot"),
             BotCommand("set_lang", "Ganti Bahasa"),
@@ -227,11 +228,10 @@ def main():
     app.add_handler(CommandHandler("scan", scan_coins))
     app.add_handler(CommandHandler("memecoin", memecoin))
     app.add_handler(CommandHandler("memecoin_ai", memecoin_ai))
-    app.add_handler(CommandHandler("wallet_list", wallet_list))
-    app.add_handler(CommandHandler("wallet_add", wallet_add))
-    app.add_handler(CommandHandler("wallet_remove", wallet_remove))
-    app.add_handler(CommandHandler("wallet_analyze", wallet_analyze))
-    app.add_handler(CommandHandler("wallet_scan", wallet_scan))
+    app.add_handler(CommandHandler("smartwallets", smartwallets))
+    app.add_handler(CommandHandler("smartwallet_add", smartwallet_add))
+    app.add_handler(CommandHandler("smartwallet_remove", smartwallet_remove))
+    app.add_handler(CommandHandler("smartwallet_discover", smartwallet_discover))
     app.add_handler(CommandHandler("memory", memory))
     app.add_handler(CommandHandler("health", health))
     app.add_handler(CommandHandler("set_lang", set_lang))
@@ -263,6 +263,38 @@ def main():
         schedule_thread = threading.Thread(target=run_daily_news_scheduler, daemon=True)
         schedule_thread.start()
         log_activity("BOT_START", "Daily news scheduler thread started", "success")
+
+    # Smart wallet discovery scheduler (every 6 hours)
+    def run_sw_discovery():
+        import time
+        import schedule
+        from duckscreeener.scanners.smart_wallet_tracker import discover_smart_wallets, seed_wallet
+        from duckscreeener.config.settings import SOLANA_SMART_WALLETS
+
+        # Seed initial wallet
+        for addr in SOLANA_SMART_WALLETS:
+            seed_wallet(addr, label="seed")
+            logger.info(f"Seed wallet added: {addr[:20]}...")
+
+        def discovery_job():
+            try:
+                discover_smart_wallets()
+            except Exception as e:
+                logger.error(f"Smart wallet discovery error: {e}")
+
+        schedule.every(6).hours.do(discovery_job)
+
+        while True:
+            try:
+                schedule.run_pending()
+                time.sleep(60)
+            except Exception as e:
+                logger.error(f"Smart wallet scheduler error: {e}")
+                time.sleep(60)
+
+    sw_thread = threading.Thread(target=run_sw_discovery, daemon=True)
+    sw_thread.start()
+    log_activity("BOT_START", "Smart wallet discovery thread started (every 6 hours)", "success")
 
     logger.info("Bot started...")
     log_activity("BOT_START", "Bot successfully started and polling for updates", "success")

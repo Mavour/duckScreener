@@ -96,6 +96,51 @@ def init_db():
             )
             """
         )
+        # Smart Wallets tracking
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS smart_wallets (
+                address TEXT PRIMARY KEY,
+                label TEXT,
+                win_rate REAL,
+                total_trades INTEGER,
+                total_pnl REAL,
+                unique_tokens INTEGER,
+                early_buyer_of TEXT,
+                last_activity REAL,
+                trust_score REAL,
+                added_at REAL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_smart_wallets_trust ON smart_wallets(trust_score DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_smart_wallets_last_activity ON smart_wallets(last_activity)"
+        )
+        # Wallet trades history
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wallet_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL,
+                token_symbol TEXT,
+                token_address TEXT,
+                action TEXT,
+                usd_value REAL,
+                timestamp REAL NOT NULL,
+                tx_signature TEXT,
+                FOREIGN KEY (wallet_address) REFERENCES smart_wallets(address)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wallet_trades_wallet ON wallet_trades(wallet_address)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wallet_trades_timestamp ON wallet_trades(timestamp)"
+        )
         conn.commit()
         conn.close()
         _schema_initialized = True
@@ -460,3 +505,184 @@ def get_user_language(user_id):
 def set_user_language(user_id, lang):
     """Set language preference for a specific user"""
     save_setting(f"user_lang_{user_id}", lang)
+
+
+# ==================== Smart Wallets ====================
+
+def store_smart_wallet(address, label="discovered", win_rate=0, total_trades=0,
+                     total_pnl=0, unique_tokens=0, early_buyer_of="",
+                     last_activity=0, trust_score=0):
+    """Store or update a smart wallet"""
+    db = get_db()
+    import time
+    ts = time.time()
+    existing = db.execute("SELECT address FROM smart_wallets WHERE address = ?", (address,)).fetchone()
+    if existing:
+        db.execute(
+            """
+            UPDATE smart_wallets SET
+                win_rate = ?, total_trades = ?, total_pnl = ?,
+                unique_tokens = ?, early_buyer_of = ?, last_activity = ?,
+                trust_score = ?
+            WHERE address = ?
+            """,
+            (win_rate, total_trades, total_pnl, unique_tokens, early_buyer_of,
+             last_activity, trust_score, address)
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO smart_wallets
+                (address, label, win_rate, total_trades, total_pnl,
+                 unique_tokens, early_buyer_of, last_activity, trust_score, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (address, label, win_rate, total_trades, total_pnl,
+             unique_tokens, early_buyer_of, last_activity, trust_score, ts)
+        )
+    db.commit()
+    logger.info(f"Smart wallet stored: {address} (WR: {win_rate:.1f}%, Trust: {trust_score:.0f})")
+
+
+def get_smart_wallet(address):
+    """Get a specific smart wallet"""
+    db = get_db()
+    row = db.execute("SELECT * FROM smart_wallets WHERE address = ?", (address,)).fetchone()
+    if not row:
+        return None
+    columns = [desc[0] for desc in db.execute("SELECT * FROM smart_wallets LIMIT 1").description]
+    return dict(zip(columns, row))
+
+
+def get_all_smart_wallets(limit=50):
+    """Get all smart wallets ordered by trust score"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM smart_wallets ORDER BY trust_score DESC LIMIT ?", (limit,)
+    ).fetchall()
+    columns = [desc[0] for desc in db.execute("SELECT * FROM smart_wallets LIMIT 1").description]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def delete_smart_wallet(address):
+    """Delete a smart wallet and its trades"""
+    db = get_db()
+    db.execute("DELETE FROM wallet_trades WHERE wallet_address = ?", (address,))
+    db.execute("DELETE FROM smart_wallets WHERE address = ?", (address,))
+    db.commit()
+    logger.info(f"Smart wallet deleted: {address}")
+
+
+def cleanup_stale_wallets(max_inactive_days=7, min_win_rate=60, max_wallets=50):
+    """Remove wallets that are inactive > max_inactive_days or win_rate < min_win_rate.
+    Also cap at max_wallets by removing lowest trust score."""
+    import time
+    db = get_db()
+    cutoff = time.time() - (max_inactive_days * 86400)
+
+    # Remove stale wallets
+    cursor = db.execute(
+        "DELETE FROM smart_wallets WHERE last_activity < ? AND label != 'seed'",
+        (cutoff,)
+    )
+    deleted_inactive = cursor.rowcount
+
+    # Remove low win rate wallets
+    cursor = db.execute(
+        "DELETE FROM smart_wallets WHERE win_rate < ? AND label != 'seed'",
+        (min_win_rate,)
+    )
+    deleted_wr = cursor.rowcount
+
+    # Also clean up orphaned trades
+    db.execute(
+        "DELETE FROM wallet_trades WHERE wallet_address NOT IN (SELECT address FROM smart_wallets)"
+    )
+
+    # Cap at max_wallets
+    count = db.execute("SELECT COUNT(*) FROM smart_wallets").fetchone()[0]
+    if count > max_wallets:
+        excess = count - max_wallets
+        db.execute(
+            "DELETE FROM smart_wallets WHERE address IN "
+            "(SELECT address FROM smart_wallets ORDER BY trust_score ASC LIMIT ?) AND label != 'seed'",
+            (excess,)
+        )
+
+    db.commit()
+    total = deleted_inactive + deleted_wr
+    if total > 0:
+        logger.info(f"Cleaned up {total} stale/low-WR smart wallets")
+    return total
+
+
+# ==================== Wallet Trades ====================
+
+def store_wallet_trade(wallet_address, token_symbol, token_address, action,
+                       usd_value, timestamp, tx_signature=""):
+    """Store a wallet trade"""
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO wallet_trades
+            (wallet_address, token_symbol, token_address, action, usd_value, timestamp, tx_signature)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (wallet_address, token_symbol, token_address, action, usd_value, timestamp, tx_signature)
+    )
+    db.commit()
+
+
+def get_wallet_trades(wallet_address, limit=50):
+    """Get trade history for a wallet"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM wallet_trades WHERE wallet_address = ? ORDER BY timestamp DESC LIMIT ?",
+        (wallet_address, limit)
+    ).fetchall()
+    columns = [desc[0] for desc in db.execute("SELECT * FROM wallet_trades LIMIT 1").description]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def get_wallet_trade_stats(wallet_address):
+    """Calculate win rate, total trades, unique tokens, etc."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT action, usd_value, token_address FROM wallet_trades WHERE wallet_address = ?",
+        (wallet_address,)
+    ).fetchall()
+
+    if not rows:
+        return None
+
+    buys = {}
+    sells = {}
+    unique_tokens = set()
+    total_pnl = 0
+
+    for action, usd_value, token_addr in rows:
+        unique_tokens.add(token_addr)
+        if action == 'BUY':
+            buys[token_addr] = buys.get(token_addr, 0) + (usd_value or 0)
+        elif action == 'SELL':
+            sells[token_addr] = sells.get(token_addr, 0) + (usd_value or 0)
+
+    profitable = 0
+    total_pairs = 0
+    for token in buys:
+        if token in sells:
+            total_pairs += 1
+            if sells[token] > buys[token]:
+                profitable += 1
+            total_pnl += sells[token] - buys[token]
+
+    win_rate = (profitable / total_pairs * 100) if total_pairs > 0 else 0
+
+    return {
+        'total_trades': len(rows),
+        'win_rate': win_rate,
+        'total_pnl': total_pnl,
+        'unique_tokens': len(unique_tokens),
+        'profitable_trades': profitable,
+        'total_pairs': total_pairs,
+    }
