@@ -1074,5 +1074,8 @@ async def _handle_intent(update, context, intent, params):
         else:
             await msg.reply_text("Cari apa? Contoh: cari tentang whale accumulation")
 
+    elif intent == "show_memory":
+        await memory(update, context)
+
     elif intent == "help":
         await start(update, context)

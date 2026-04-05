@@ -43,7 +43,15 @@ INTENT_PATTERNS = {
     ],
     "search_knowledge": [
         r"(cari|search|ingat|ingat.*apa|ada.*info).*(tentang|ttg|about)",
-        r"(apa|what).*(kamu|lo|lu|you).*(ingat|tahu|know|pelajari|learn)",
+    ],
+    "show_memory": [
+        r"(apa|what).*(kamu|lo|lu|you|agent|bot).*(ingat|tahu|know|pelajari|learn|hafal)",
+        r"(pelajaran|lesson|belajar|knowledge|memory|ingatan|yang.*dipelajari|yang.*kamu.*tahu)",
+        r"(apa.*saja|what.*all|everything|semua).*(yang.*kamu|that.*you|yang.*udah|yang.*sudah).*(pelajari|learn|tahu|know)",
+        r"apa.*yang.*kamu.*pelajari|what.*did.*you.*learn|apa.*yang.*kamu.*tahu",
+        r"apa.*yang.*udah.*kamu.*pelajari|apa.*yang.*sudah.*kamu.*pelajari",
+        r"apa.*yang.*kamu.*sudah.*pelajari|apa.*yang.*kamu.*udah.*pelajari",
+        r"(show|tampilkan|lihat).*(memory|ingatan|pengetahuan|knowledge)",
     ],
     "help": [
         r"(bisa.*apa|bisa.*ngapain|fitur|help|bantuan|command|menu)",
