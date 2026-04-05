@@ -212,7 +212,12 @@ def run_backtest(chat_id=None):
             source = sig.get('source_type', '?')
             sig_type = sig.get('signal_type', '')
 
-            status_emoji = "" if status == "SUCCESS" else ("" if status == "FAILED" else "⏳")
+            if status == "SUCCESS":
+                status_emoji = "\u2705"
+            elif status == "FAILED":
+                status_emoji = "\u274C"
+            else:
+                status_emoji = "\u23F3"
 
             if source not in report_by_source:
                 report_by_source[source] = []
@@ -230,31 +235,31 @@ def run_backtest(chat_id=None):
         win_rate = (success_count / (success_count + failure_count) * 100) if (success_count + failure_count) > 0 else 0
 
         source_labels = {
-            'scan': 'CEX Spot — Whale Accumulation',
-            'memecoin': 'Memecoin — New Launch',
-            'gmgn': 'GMGN — Smart Money',
-            'solana': 'Solana — On-Chain',
+            'scan': "\U0001F40B CEX Spot — Whale Accumulation",
+            'memecoin': "\U0001F680 Memecoin — New Launch",
+            'gmgn': "\U0001F9E0 GMGN — Smart Money",
+            'solana': "\u2600\uFE0F Solana — On-Chain",
         }
 
-        report = f"BACKTEST REPORT\n"
+        report = f"\U0001F4CA BACKTEST REPORT\n"
         report += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-        report += f"Success: {success_count} | Failed: {failure_count} | Pending: {pending_count}\n"
-        report += f"Win Rate: {win_rate:.1f}%\n\n"
+        report += f"\u2705 Success: {success_count} | \u274C Failed: {failure_count} | \u23F3 Pending: {pending_count}\n"
+        report += f"\U0001F4C8 Win Rate: {win_rate:.1f}%\n\n"
 
         # Pattern analysis
         patterns = get_pattern_analysis()
         if patterns:
-            report += "PATTERN ANALYSIS:\n"
+            report += "\U0001F50D PATTERN ANALYSIS:\n"
             for p in patterns[:5]:
                 report += f"- {p['signal_type']} ({p['source_type']}): {p['win_rate']:.0f}% WR, avg {p['avg_change']:+.1f}% ({p['total']} signals)\n"
             report += "\n"
 
         # Grouped signals by source
         source_labels = {
-            'scan': "CEX Spot — Whale Accumulation",
-            'memecoin': "Memecoin — New Launch",
-            'gmgn': "GMGN — Smart Money",
-            'solana': "Solana — On-Chain",
+            'scan': "\U0001F40B CEX Spot — Whale Accumulation",
+            'memecoin': "\U0001F680 Memecoin — New Launch",
+            'gmgn': "\U0001F9E0 GMGN — Smart Money",
+            'solana': "\u2600\uFE0F Solana — On-Chain",
         }
         for source, lines in report_by_source.items():
             label = source_labels.get(source, source.upper())

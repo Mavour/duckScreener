@@ -277,25 +277,30 @@ async def memecoin(update, context):
         )
         return
 
-    message = "NEW MEMECOINS WITH HYPE POTENTIAL\n"
+    message = "\U0001F525 NEW MEMECOINS WITH HYPE POTENTIAL\n"
     message += "Scanning for coins BEFORE they pump\n\n"
 
     for coin in new_coins[:5]:
-        rating_emoji = "" if coin['rating'] == 'HIGH' else ("⚡" if coin['rating'] == 'MEDIUM' else "📊")
+        if coin['rating'] == 'HIGH':
+            rating_emoji = "\U0001F680"
+        elif coin['rating'] == 'MEDIUM':
+            rating_emoji = "\u26A1"
+        else:
+            rating_emoji = "\U0001F4CA"
         message += f"{rating_emoji} [{coin['rating']}] Score: {coin['score']}\n"
         message += f"{coin['name']} ({coin['symbol']})\n"
         price_str = f"${coin['price']:.8f}" if coin['price'] < 0.001 else f"${coin['price']:.6f}"
-        message += f"Price: {price_str} | 1h: {'+' if coin['price_change_1h'] > 0 else ''}{coin['price_change_1h']:.1f}%\n"
-        message += f"Age: {coin['age_hours']:.1f}h | Liq: ${coin['liquidity']/1000:.1f}K | MC: ${coin['market_cap']/1000:.1f}K\n"
-        message += f"Vol/Liq Ratio: {coin['volume_liq_ratio']:.1f}x\n"
-        message += f"Narrative: {', '.join(coin['narrative'])}\n"
+        message += f"\U0001F4B0 Price: {price_str} | 1h: {'+' if coin['price_change_1h'] > 0 else ''}{coin['price_change_1h']:.1f}%\n"
+        message += f"\u23F1\uFE0F Age: {coin['age_hours']:.1f}h | \U0001F4A7 Liq: ${coin['liquidity']/1000:.1f}K | \U0001F4B8 MC: ${coin['market_cap']/1000:.1f}K\n"
+        message += f"\U0001F4C8 Vol/Liq Ratio: {coin['volume_liq_ratio']:.1f}x\n"
+        message += f"\U0001F3F7\uFE0F Narrative: {', '.join(coin['narrative'])}\n"
 
         if coin['signals']:
-            message += f"Signals: {'; '.join(coin['signals'][:3])}\n"
+            message += f"\u2705 Signals: {'; '.join(coin['signals'][:3])}\n"
         if coin['risks']:
-            message += f"Risks: {'; '.join(coin['risks'][:2])}\n"
+            message += f"\u26A0\uFE0F Risks: {'; '.join(coin['risks'][:2])}\n"
 
-        message += f"[DexScreener]({coin['dex_screener_url']}) | [GMGN]({coin['gmgn_url']})\n\n"
+        message += f"\U0001F517 [DexScreener]({coin['dex_screener_url']}) | [GMGN]({coin['gmgn_url']})\n\n"
 
         from duckscreeener.db.database import store_knowledge
         record = (
@@ -701,14 +706,14 @@ async def scan_coins(update, context):
 
         message += f"{gem_emoji} {gem_type}\n"
         message += f"*{gem['name']} ({gem['symbol']})*\n"
-        message += f"Price: {price_str} | 24h: {change_24h}\n"
-        message += f"Vol: {volume_str} | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
-        message += f"Vol/MC Ratio: {vm_ratio:.2f} (high = unusual activity)\n"
-        message += f"From ATH: -{ath_drop:.0f}%\n"
+        message += f"\U0001F4B0 Price: {price_str} | 24h: {change_24h}\n"
+        message += f"\U0001F4C8 Vol: {volume_str} | \U0001F4B8 MC: ${gem['market_cap']/1_000_000:.1f}M\n"
+        message += f"\U0001F4CA Vol/MC Ratio: {vm_ratio:.2f} (high = unusual activity)\n"
+        message += f"\U0001F4C9 From ATH: -{ath_drop:.0f}%\n"
         if gem.get('analysis'):
-            message += f"Analisis: {gem['analysis'][:200]}\n"
+            message += f"\U0001F4DD Analisis: {gem['analysis'][:200]}\n"
         coin_id = gem.get('coin_id', gem['symbol'].lower())
-        message += f"[CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
+        message += f"\U0001F517 [CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
 
         scan_record = (
             f"[GEM SCAN] {gem['name']} ({gem['symbol']}) - "
