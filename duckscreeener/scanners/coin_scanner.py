@@ -194,6 +194,19 @@ def scan_potential_coins():
                 else:
                     gem['analysis'] = f"Volume/MC ratio {gem['vol_mcap_ratio']:.2f} — ada aktivitas tidak biasa."
 
+            from duckscreeener.db.database import store_signal
+            store_signal(
+                symbol=gem['symbol'],
+                entry_price=gem['price'],
+                source_type='scan',
+                signal_type=gem['gem_type'],
+                market_cap=gem['market_cap'],
+                volume=gem['volume'],
+                score=int(gem['vol_mcap_ratio'] * 100),
+                narrative=None,
+                analysis=gem.get('analysis', '')[:500],
+            )
+
         return potential_gems[:10]
 
     except Exception as e:

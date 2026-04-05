@@ -49,27 +49,32 @@ def send_telegram_message_sync(chat_id, text, parse_mode="Markdown"):
 def run_backtest_scheduler():
     import time
     import schedule
+    from duckscreeener.config.settings import BACKTEST_CHAT_ID
+    from duckscreeener.scanners.backtest import run_backtest
+    from duckscreeener.agent.reflection import run_reflection
 
     logger.info(f"Backtest scheduled for {BACKTEST_HOUR:02d}:{BACKTEST_MINUTE:02d} daily")
 
     def backtest_job():
         try:
-            report = run_backtest(chat_id=BACKTEST_CHAT_ID)
+            report = run_backtest()
             if report:
                 send_telegram_message_sync(BACKTEST_CHAT_ID, report)
                 logger.info("Backtest report sent successfully")
+
+                # Run self-reflection after backtest
+                reflection = run_reflection()
+                if reflection and "error" not in reflection.lower():
+                    send_telegram_message_sync(BACKTEST_CHAT_ID, f"Self-Reflection:\n{reflection}")
+                    logger.info("Reflection completed")
             else:
                 send_telegram_message_sync(
                     BACKTEST_CHAT_ID,
-                    "Backtest completed. No signals to evaluate yet.\nRun /scan or /gmgn first to generate signals."
+                    "Backtest completed. No signals to evaluate yet.\nRun /scan or /memecoin first to generate signals."
                 )
-                logger.info("Backtest completed - no signals")
         except Exception as e:
             logger.error(f"Backtest scheduler error: {e}")
-            send_telegram_message_sync(
-                BACKTEST_CHAT_ID,
-                f"Backtest error: {e}"
-            )
+            send_telegram_message_sync(BACKTEST_CHAT_ID, f"Backtest error: {e}")
 
     schedule.every().day.at(f"{BACKTEST_HOUR:02d}:{BACKTEST_MINUTE:02d}").do(backtest_job)
 

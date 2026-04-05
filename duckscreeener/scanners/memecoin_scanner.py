@@ -349,6 +349,20 @@ def analyze_memecoin_potential(pairs):
             'raydium_url': f"https://raydium.io/swap/?inputCurrency=sol&outputCurrency={pair['address']}",
         })
 
+        from duckscreeener.db.database import store_signal
+        store_signal(
+            symbol=pair['symbol'],
+            entry_price=pair['price'],
+            source_type='memecoin',
+            signal_type=f"NEW ({pair['age_hours']:.1f}h)",
+            token_address=pair['address'],
+            market_cap=pair['market_cap'],
+            volume=pair['volume_1h'],
+            score=score,
+            narrative=', '.join(narrative),
+            analysis='; '.join(signals[:3]),
+        )
+
     results.sort(key=lambda x: x['score'], reverse=True)
     return results
 

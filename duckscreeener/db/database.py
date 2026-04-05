@@ -1,5 +1,6 @@
 import sqlite3
 import time
+import json
 import logging
 import os
 import threading
@@ -16,6 +17,7 @@ def get_db():
     with _db_lock:
         if _db_conn is None:
             _db_conn = sqlite3.connect(KNOWLEDGE_DB, check_same_thread=False)
+            _db_conn.execute("PRAGMA journal_mode=WAL")
             _db_conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS knowledge (
@@ -41,6 +43,55 @@ def get_db():
                 )
                 """
             )
+            _db_conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scan_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    token_address TEXT,
+                    source_type TEXT NOT NULL,
+                    entry_price REAL NOT NULL,
+                    signal_type TEXT,
+                    market_cap REAL,
+                    volume REAL,
+                    score INTEGER,
+                    narrative TEXT,
+                    analysis TEXT,
+                    timestamp REAL NOT NULL
+                )
+                """
+            )
+            _db_conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_scan_signals_symbol
+                ON scan_signals(symbol)
+                """
+            )
+            _db_conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp
+                ON scan_signals(timestamp)
+                """
+            )
+            _db_conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_scan_signals_source_type
+                ON scan_signals(source_type)
+                """
+            )
+            _db_conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS signal_outcomes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id INTEGER NOT NULL,
+                    exit_price REAL,
+                    change_pct REAL,
+                    result TEXT,
+                    checked_at REAL NOT NULL,
+                    FOREIGN KEY (signal_id) REFERENCES scan_signals(id)
+                )
+                """
+            )
             _db_conn.commit()
         return _db_conn
 
@@ -49,9 +100,11 @@ def load_knowledge():
     get_db()
 
 
+# ==================== Knowledge Base ====================
+
 def store_knowledge(source, text):
     db = get_db()
-    db.execute(
+    cursor = db.execute(
         "INSERT INTO knowledge (source, text, timestamp) VALUES (?, ?, ?)",
         (source, text, time.time()),
     )
@@ -60,7 +113,15 @@ def store_knowledge(source, text):
         (source, text),
     )
     db.commit()
-    logger.info(f"Knowledge stored from {source} ({len(text)} chars)")
+    knowledge_id = cursor.lastrowid
+    logger.info(f"Knowledge stored from {source} ({len(text)} chars) id={knowledge_id}")
+
+    # Auto-generate embedding in background
+    try:
+        from duckscreeener.db.vector_search import store_embedding
+        store_embedding(knowledge_id, text)
+    except Exception as e:
+        logger.debug(f"Embedding generation skipped: {e}")
 
 
 def search_knowledge(query, limit=5):
@@ -98,6 +159,185 @@ def get_all_knowledge_by_source_prefix(prefix):
     ).fetchall()
     return [{'id': r[0], 'source': r[1], 'text': r[2], 'timestamp': r[3]} for r in rows]
 
+
+# ==================== Scan Signals (Structured) ====================
+
+def store_signal(symbol, entry_price, source_type, signal_type=None,
+                 token_address=None, market_cap=None, volume=None,
+                 score=None, narrative=None, analysis=None):
+    """Store a scan signal in structured format for backtesting"""
+    db = get_db()
+    ts = time.time()
+    cursor = db.execute(
+        """
+        INSERT INTO scan_signals
+            (symbol, token_address, source_type, entry_price, signal_type,
+             market_cap, volume, score, narrative, analysis, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            symbol.upper(),
+            token_address,
+            source_type,
+            entry_price,
+            signal_type,
+            market_cap,
+            volume,
+            score,
+            narrative,
+            analysis,
+            ts,
+        )
+    )
+    db.commit()
+    signal_id = cursor.lastrowid
+    logger.info(
+        f"Signal stored: {symbol} @ ${entry_price} ({source_type}/{signal_type}) id={signal_id}"
+    )
+    return signal_id
+
+
+def get_signals(source_types=None, since=None, limit=100):
+    """Get scan signals for backtesting"""
+    db = get_db()
+
+    query = "SELECT * FROM scan_signals WHERE 1=1"
+    params = []
+
+    if source_types:
+        placeholders = ", ".join(["?"] * len(source_types))
+        query += f" AND source_type IN ({placeholders})"
+        params.extend(source_types)
+
+    if since:
+        query += " AND timestamp >= ?"
+        params.append(since)
+
+    query += " ORDER BY timestamp DESC"
+
+    if limit:
+        query += f" LIMIT {limit}"
+
+    rows = db.execute(query, params).fetchall()
+    columns = [desc[0] for desc in db.execute("SELECT * FROM scan_signals LIMIT 1").description]
+
+    results = []
+    for row in rows:
+        signal = dict(zip(columns, row))
+        results.append(signal)
+
+    return results
+
+
+def get_latest_signal(symbol, source_types=None):
+    """Get the most recent signal for a symbol"""
+    db = get_db()
+    query = "SELECT * FROM scan_signals WHERE symbol = ?"
+    params = [symbol.upper()]
+
+    if source_types:
+        placeholders = ", ".join(["?"] * len(source_types))
+        query += f" AND source_type IN ({placeholders})"
+        params.extend(source_types)
+
+    query += " ORDER BY timestamp DESC LIMIT 1"
+
+    row = db.execute(query, params).fetchone()
+    if not row:
+        return None
+
+    columns = [desc[0] for desc in db.execute("SELECT * FROM scan_signals LIMIT 1").description]
+    return dict(zip(columns, row))
+
+
+def record_outcome(signal_id, exit_price, change_pct, result):
+    """Record the outcome of a signal"""
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO signal_outcomes (signal_id, exit_price, change_pct, result, checked_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (signal_id, exit_price, change_pct, result, time.time())
+    )
+    db.commit()
+    logger.info(f"Outcome recorded for signal {signal_id}: {result} ({change_pct:+.1f}%)")
+
+
+def get_signal_stats(since=None):
+    """Get aggregate stats from signal outcomes"""
+    db = get_db()
+    query = """
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN result = 'SUCCESS' THEN 1 ELSE 0 END) as successes,
+            SUM(CASE WHEN result = 'FAILED' THEN 1 ELSE 0 END) as failures,
+            SUM(CASE WHEN result = 'PENDING' THEN 1 ELSE 0 END) as pending,
+            AVG(CASE WHEN result IN ('SUCCESS', 'FAILED') THEN change_pct END) as avg_change
+        FROM signal_outcomes
+    """
+    params = []
+    if since:
+        query += " WHERE checked_at >= ?"
+        params.append(since)
+
+    row = db.execute(query, params).fetchone()
+    if not row:
+        return None
+
+    total = row[0] or 0
+    successes = row[1] or 0
+    failures = row[2] or 0
+    pending = row[3] or 0
+    avg_change = row[4] or 0
+    win_rate = (successes / (successes + failures) * 100) if (successes + failures) > 0 else 0
+
+    return {
+        'total': total,
+        'successes': successes,
+        'failures': failures,
+        'pending': pending,
+        'win_rate': win_rate,
+        'avg_change': avg_change,
+    }
+
+
+def get_pattern_analysis():
+    """Analyze which signal types perform best"""
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            s.signal_type,
+            s.source_type,
+            s.narrative,
+            COUNT(o.id) as total_checked,
+            SUM(CASE WHEN o.result = 'SUCCESS' THEN 1 ELSE 0 END) as successes,
+            AVG(o.change_pct) as avg_change
+        FROM scan_signals s
+        JOIN signal_outcomes o ON s.id = o.signal_id
+        GROUP BY s.signal_type, s.source_type, s.narrative
+        HAVING total_checked >= 2
+        ORDER BY avg_change DESC
+        """
+    ).fetchall()
+
+    patterns = []
+    for row in rows:
+        patterns.append({
+            'signal_type': row[0],
+            'source_type': row[1],
+            'narrative': row[2],
+            'total': row[3],
+            'successes': row[4],
+            'win_rate': (row[4] / row[3] * 100) if row[3] > 0 else 0,
+            'avg_change': row[5],
+        })
+
+    return patterns
+
+
+# ==================== Settings ====================
 
 def save_setting(key, value):
     db = get_db()

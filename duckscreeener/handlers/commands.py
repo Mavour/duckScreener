@@ -422,18 +422,37 @@ async def memory(update, context):
 
 async def health(update, context):
     await update.message.reply_chat_action(action="typing")
+    import time
+    from duckscreeener.db.database import get_signal_stats, count_knowledge, get_db
+
     test_prompt = "Say OK in three words."
     openrouter_answer = openrouter_chat(test_prompt, system="You are a simple health-check assistant.")
     stored = count_knowledge()
     chat_id = update.effective_chat.id
 
+    db = get_db()
+    signal_count = db.execute("SELECT COUNT(*) FROM scan_signals").fetchone()[0]
+    outcome_count = db.execute("SELECT COUNT(*) FROM signal_outcomes").fetchone()[0]
+
+    stats = get_signal_stats()
+    stats_text = ""
+    if stats and stats['total'] > 0:
+        stats_text = (
+            f"\nSignal Stats:\n"
+            f"- Total checked: {stats['total']}\n"
+            f"- Win rate: {stats['win_rate']:.1f}%\n"
+            f"- Avg change: {stats['avg_change']:+.1f}%"
+        )
+
     await update.message.reply_text(
         f"Health check:\n"
-        f"- Bot process connected and handling commands.\n"
+        f"- Bot process: connected\n"
         f"- Telegram token: {'set' if TELEGRAM_TOKEN else 'missing'}\n"
         f"- OpenRouter key: {'set' if OPENROUTER_API_KEY else 'missing'}\n"
         f"- OpenRouter test: {openrouter_answer[:200]}\n"
         f"- Knowledge entries: {stored}\n"
+        f"- Scan signals: {signal_count}\n"
+        f"- Signal outcomes: {outcome_count}{stats_text}\n"
         f"- Your chat_id: `{chat_id}`"
     )
 
@@ -444,14 +463,20 @@ async def search(update, context):
         await update.message.reply_text(translate("search_usage"))
         return
     query = " ".join(context.args)
-    results = search_knowledge(query, limit=5)
+
+    from duckscreeener.db.vector_search import search_semantic
+    results = search_semantic(query, limit=5)
+
     if not results:
         await update.message.reply_text(translate("search_no_results"))
         return
+
     lines = [translate("search_results").format(query=query)]
     for i, item in enumerate(results):
         preview = item['text'][:200].replace('\n', ' ')
-        lines.append(f"{i+1}. [{item['source']}] {preview}...")
+        sim = item.get('similarity')
+        sim_str = f" ({sim:.2f})" if sim is not None else ""
+        lines.append(f"{i+1}. [{item['source']}]{sim_str} {preview}...")
     await update.message.reply_text("\n".join(lines))
 
 
@@ -698,11 +723,25 @@ async def run_backtest_command(update, context):
     await update.message.reply_text("Running backtest analysis...")
 
     try:
-        report = run_backtest(chat_id=str(update.effective_chat.id))
+        report = run_backtest()
         if report:
-            await update.message.reply_text(report, parse_mode="Markdown")
+            max_len = 4000
+            if len(report) > max_len:
+                parts = report.split("\n\n")
+                current = ""
+                for part in parts:
+                    if len(current) + len(part) + 2 > max_len:
+                        if current.strip():
+                            await update.message.reply_text(current.strip(), parse_mode="Markdown")
+                        current = part
+                    else:
+                        current += "\n\n" + part if current else part
+                if current.strip():
+                    await update.message.reply_text(current.strip(), parse_mode="Markdown")
+            else:
+                await update.message.reply_text(report, parse_mode="Markdown")
         else:
-            await update.message.reply_text("Backtest complete. Check report above.")
+            await update.message.reply_text("Backtest complete. No signals to evaluate.")
     except Exception as e:
         await update.message.reply_text(f"Backtest error: {e}")
 
@@ -885,7 +924,15 @@ async def handle_message(update, context):
             await msg.reply_text(f"Link received: {text[:80]}")
             return
 
-        # General chat
+        # Intent-based handling
+        from duckscreeener.agent.intent_parser import parse_intent, get_natural_response
+        intent, params = parse_intent(text)
+
+        if intent:
+            await _handle_intent(update, context, intent, params)
+            return
+
+        # General chat — AI conversational response
         recent = get_recent_knowledge(10)
         history = "\n".join([f"[{item['source']}] {item['text'][:300]}" for item in recent])
 
@@ -925,3 +972,53 @@ Sekarang jawab pertanyaan berikut dengan mempertimbangkan semua knowledge di ata
         await msg.reply_text(ans)
 
         store_knowledge("user:question", text)
+
+
+async def _handle_intent(update, context, intent, params):
+    """Route intent to the appropriate handler function"""
+    msg = update.message
+
+    if intent == "scan_coins":
+        await scan_coins(update, context)
+
+    elif intent == "scan_memecoins":
+        await memecoin(update, context)
+
+    elif intent == "backtest":
+        await run_backtest_command(update, context)
+
+    elif intent == "summary":
+        await summary(update, context)
+
+    elif intent == "wallet_analyze":
+        if params and params.get('address'):
+            context.args = [params['address']]
+            await wallet_analyze(update, context)
+        else:
+            await msg.reply_text("Untuk analisa wallet, berikan address-nya. Contoh: analisa wallet DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm")
+
+    elif intent == "sentiment":
+        if params and params.get('coin'):
+            coin = params['coin']
+            await msg.reply_text(f"Menganalisis sentiment untuk {coin}...")
+            from duckscreeener.services.external_apis import fetch_latest_news_with_items
+            news_items = fetch_latest_news_with_items(limit=20)
+            coin_lower = coin.lower()
+            filtered = [n for n in news_items if coin_lower in n.get('title', '').lower() or coin_lower in n.get('description', '').lower()]
+            news_text = "\n".join([f"- {n.get('title', '')[:150]}: {n.get('description', '')[:150]}..." for n in filtered[:5]]) if filtered else "No specific news found."
+            prompt = f"Analyze market sentiment for '{coin}'. Provide: 1) Overall sentiment (Bullish/Bearish/Neutral) 2) Key highlights 3) Risks 4) Conclusion\n\nNews:\n{news_text}"
+            analysis = openrouter_chat(prompt, system="You are a crypto sentiment analyst.")
+            await msg.reply_text(f"Sentiment Analysis - {coin}\n\n{analysis}")
+        else:
+            await msg.reply_text("Sentiment coin apa? Contoh: sentiment BTC")
+
+    elif intent == "search_knowledge":
+        query = params.get('query', '') if params else ''
+        if query:
+            context.args = query.split()
+            await search(update, context)
+        else:
+            await msg.reply_text("Cari apa? Contoh: cari tentang whale accumulation")
+
+    elif intent == "help":
+        await start(update, context)
