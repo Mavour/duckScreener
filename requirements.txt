@@ -9,3 +9,4 @@ tweepy
 PyMuPDF
 pytesseract
 pillow
+yt-dlp
