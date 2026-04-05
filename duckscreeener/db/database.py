@@ -195,8 +195,18 @@ def get_all_knowledge_by_source_prefix(prefix):
 def store_signal(symbol, entry_price, source_type, signal_type=None,
                  token_address=None, market_cap=None, volume=None,
                  score=None, narrative=None, analysis=None):
-    """Store a scan signal in structured format for backtesting"""
+    """Store a scan signal in structured format for backtesting.
+    If symbol already exists, skip (keep original timestamp).
+    """
     db = get_db()
+    existing = db.execute(
+        "SELECT id, timestamp FROM scan_signals WHERE symbol = ? AND source_type = ? ORDER BY timestamp ASC LIMIT 1",
+        (symbol.upper(), source_type)
+    ).fetchone()
+    if existing:
+        logger.info(f"Signal for {symbol} already exists (first scan: {datetime.fromtimestamp(existing[1]).strftime('%H:%M')}), skipping")
+        return existing[0]
+
     ts = time.time()
     cursor = db.execute(
         """
@@ -225,6 +235,18 @@ def store_signal(symbol, entry_price, source_type, signal_type=None,
         f"Signal stored: {symbol} @ ${entry_price} ({source_type}/{signal_type}) id={signal_id}"
     )
     return signal_id
+
+
+def get_first_scan_time(symbol, source_type):
+    """Get the timestamp of the first scan for a symbol"""
+    db = get_db()
+    row = db.execute(
+        "SELECT timestamp FROM scan_signals WHERE symbol = ? AND source_type = ? ORDER BY timestamp ASC LIMIT 1",
+        (symbol.upper(), source_type)
+    ).fetchone()
+    if row:
+        return datetime.fromtimestamp(row[0]).strftime("%H:%M")
+    return datetime.now().strftime("%H:%M")
 
 
 def get_signals(source_types=None, since=None, limit=100):

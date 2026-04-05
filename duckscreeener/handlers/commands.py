@@ -9,7 +9,7 @@ from duckscreeener.config.settings import (
 )
 from duckscreeener.db.database import (
     store_knowledge, search_knowledge, count_knowledge, get_recent_knowledge,
-    load_list_setting, save_list_setting,
+    load_list_setting, save_list_setting, get_first_scan_time,
 )
 from duckscreeener.services.external_apis import (
     openrouter_chat, extract_text_from_pdf, extract_text_from_image,
@@ -289,6 +289,7 @@ async def memecoin(update, context):
             rating_emoji = "\U0001F4CA"
         message += f"{rating_emoji} [{coin['rating']}] Score: {coin['score']}\n"
         message += f"{coin['name']} ({coin['symbol']})\n"
+        message += f"\U0001F550 Scanned at: {get_first_scan_time(coin['symbol'], 'memecoin')}\n"
         price_str = f"${coin['price']:.8f}" if coin['price'] < 0.001 else f"${coin['price']:.6f}"
         message += f"\U0001F4B0 Price: {price_str} | 1h: {'+' if coin['price_change_1h'] > 0 else ''}{coin['price_change_1h']:.1f}%\n"
         message += f"\u23F1\uFE0F Age: {coin['age_hours']:.1f}h | \U0001F4A7 Liq: ${coin['liquidity']/1000:.1f}K | \U0001F4B8 MC: ${coin['market_cap']/1000:.1f}K\n"
@@ -706,6 +707,7 @@ async def scan_coins(update, context):
 
         message += f"{gem_emoji} {gem_type}\n"
         message += f"*{gem['name']} ({gem['symbol']})*\n"
+        message += f"\U0001F550 Scanned at: {get_first_scan_time(gem['symbol'], 'scan')}\n"
         message += f"\U0001F4B0 Price: {price_str} | 24h: {change_24h}\n"
         message += f"\U0001F4C8 Vol: {volume_str} | \U0001F4B8 MC: ${gem['market_cap']/1_000_000:.1f}M\n"
         message += f"\U0001F4CA Vol/MC Ratio: {vm_ratio:.2f} (high = unusual activity)\n"
