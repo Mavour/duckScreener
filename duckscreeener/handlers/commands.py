@@ -703,8 +703,19 @@ async def scan_coins(update, context):
         vm_ratio = gem.get('vol_mcap_ratio', 0)
         ath_drop = gem.get('ath_drop', 0)
 
-        emoji = ""
-        message += f"{emoji} {gem['gem_type']}\n"
+        gem_type = gem.get('gem_type', '')
+        if 'WHALE' in gem_type:
+            gem_emoji = "\U0001F40B"
+        elif 'SILENT' in gem_type:
+            gem_emoji = "\U0001F92B"
+        elif 'EARLY' in gem_type:
+            gem_emoji = "\u26A1"
+        elif 'DEEP' in gem_type:
+            gem_emoji = "\U0001F48E"
+        else:
+            gem_emoji = "\U0001F50D"
+
+        message += f"{gem_emoji} {gem_type}\n"
         message += f"*{gem['name']} ({gem['symbol']})*\n"
         message += f"Price: {price_str} | 24h: {change_24h}\n"
         message += f"Vol: {volume_str} | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
