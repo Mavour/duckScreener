@@ -125,25 +125,49 @@ def detect_narrative(name, symbol, description=""):
     if detected:
         return detected
 
-    # Fallback: AI detect (only if not rate-limited)
+    return ["Random/Abstract"]
+
+
+def detect_narrative_batch(tokens):
+    """
+    Classify multiple tokens in a single LLM call.
+    tokens: list of {'name': str, 'symbol': str}
+    Returns: dict of symbol -> narrative list
+    """
+    unmatched = [t for t in tokens if not detect_narrative(t.get('name', ''), t.get('symbol', ''))]
+    results = {}
+
+    for t in tokens:
+        narrative = detect_narrative(t.get('name', ''), t.get('symbol', ''))
+        results[t.get('symbol', '')] = narrative
+
+    if not unmatched:
+        return results
+
+    token_list = "\n".join(f"- {t.get('name', '')} ({t.get('symbol', '')})" for t in unmatched[:15])
     try:
         ai_prompt = (
-            f"Classify this memecoin into ONE narrative category. "
+            f"Classify each of these memecoins into ONE narrative category.\n"
             f"Choose from: AI, Gaming, Political, Animal, Meme Culture, DeFi, Meme/Parody, "
-            f"Food, Culture/Pop, Music, Science/Space, Religion/Mythology, Math/Numbers, Random/Abstract. "
-            f"Return ONLY the category name, nothing else.\n\n"
-            f"Name: {name}\nSymbol: {symbol}"
+            f"Food, Culture/Pop, Music, Science/Space, Religion/Mythology, Math/Numbers, Random/Abstract.\n"
+            f"Return ONLY lines like: SYMBOL: Category\n\n"
+            f"Tokens:\n{token_list}"
         )
-        result = openrouter_chat(ai_prompt, system="You are a crypto narrative classifier.")
-        if "429" in result or "Too Many" in result:
-            return ["Random/Abstract"]
-        result = result.strip().strip('"').strip("'")
-        if result and len(result) < 50:
-            return [result]
+        response = openrouter_chat(ai_prompt, system="You are a crypto narrative classifier.")
+        for line in response.strip().split("\n"):
+            if ":" in line:
+                parts = line.split(":", 1)
+                sym = parts[0].strip().upper()
+                cat = parts[1].strip()
+                if sym and cat:
+                    results[sym] = [cat]
     except Exception:
-        pass
+        for t in unmatched:
+            sym = t.get('symbol', '')
+            if sym not in results:
+                results[sym] = ["Random/Abstract"]
 
-    return ["Random/Abstract"]
+    return results
 
 
 def get_new_solana_pairs(hours=24, min_liquidity=5000, max_liquidity=2000000, limit=50):

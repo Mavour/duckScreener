@@ -14,7 +14,7 @@ from duckscreeener.config.settings import (
     LOG_DIR, LOG_FILE,
     SCAN_INTERVAL_MINUTES, SOLANA_SCAN_INTERVAL,
 )
-from duckscreeener.db.database import load_knowledge
+from duckscreeener.db.database import init_db
 from duckscreeener.handlers.commands import (
     start, summary, memecoin, memecoin_ai, learn, create_agent,
     set_lang, search,
@@ -147,6 +147,7 @@ def run_gmgn_scanner():
 
 def main():
     log_activity("BOT_START", "Starting Crypto Agent Bot (Modular)")
+    init_db()
     load_knowledge()
 
     if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":

@@ -2,102 +2,116 @@ import sqlite3
 import time
 import json
 import logging
-import os
 import threading
 from duckscreeener.config.settings import KNOWLEDGE_DB
 
 logger = logging.getLogger(__name__)
 
-_db_conn = None
-_db_lock = threading.Lock()
+_local = threading.local()
+_schema_initialized = False
+_schema_lock = threading.Lock()
+
+
+def init_db():
+    """Initialize database schema once at startup"""
+    global _schema_initialized
+    with _schema_lock:
+        if _schema_initialized:
+            return
+        conn = sqlite3.connect(KNOWLEDGE_DB, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                text TEXT NOT NULL,
+                timestamp REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+                source, text
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scan_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                token_address TEXT,
+                source_type TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                signal_type TEXT,
+                market_cap REAL,
+                volume REAL,
+                score INTEGER,
+                narrative TEXT,
+                analysis TEXT,
+                timestamp REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scan_signals_symbol ON scan_signals(symbol)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp ON scan_signals(timestamp)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scan_signals_source_type ON scan_signals(source_type)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS signal_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id INTEGER NOT NULL,
+                exit_price REAL,
+                change_pct REAL,
+                result TEXT,
+                checked_at REAL NOT NULL,
+                FOREIGN KEY (signal_id) REFERENCES scan_signals(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_embeddings (
+                knowledge_id INTEGER PRIMARY KEY,
+                embedding BLOB NOT NULL,
+                FOREIGN KEY (knowledge_id) REFERENCES knowledge(id)
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+        _schema_initialized = True
+        logger.info("Database schema initialized")
 
 
 def get_db():
-    global _db_conn
-    with _db_lock:
-        if _db_conn is None:
-            _db_conn = sqlite3.connect(KNOWLEDGE_DB, check_same_thread=False)
-            _db_conn.execute("PRAGMA journal_mode=WAL")
-            _db_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS knowledge (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    timestamp REAL NOT NULL
-                )
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
-                    source, text
-                )
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS scan_signals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    token_address TEXT,
-                    source_type TEXT NOT NULL,
-                    entry_price REAL NOT NULL,
-                    signal_type TEXT,
-                    market_cap REAL,
-                    volume REAL,
-                    score INTEGER,
-                    narrative TEXT,
-                    analysis TEXT,
-                    timestamp REAL NOT NULL
-                )
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_scan_signals_symbol
-                ON scan_signals(symbol)
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_scan_signals_timestamp
-                ON scan_signals(timestamp)
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_scan_signals_source_type
-                ON scan_signals(source_type)
-                """
-            )
-            _db_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS signal_outcomes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    signal_id INTEGER NOT NULL,
-                    exit_price REAL,
-                    change_pct REAL,
-                    result TEXT,
-                    checked_at REAL NOT NULL,
-                    FOREIGN KEY (signal_id) REFERENCES scan_signals(id)
-                )
-                """
-            )
-            _db_conn.commit()
-        return _db_conn
+    """Get a thread-local database connection"""
+    if not hasattr(_local, 'conn') or _local.conn is None:
+        _local.conn = sqlite3.connect(KNOWLEDGE_DB, timeout=30)
+        _local.conn.execute("PRAGMA journal_mode=WAL")
+        _local.conn.execute("PRAGMA busy_timeout=5000")
+    return _local.conn
 
 
 def load_knowledge():
-    get_db()
+    init_db()
 
 
 # ==================== Knowledge Base ====================
@@ -119,7 +133,6 @@ def store_knowledge(source, text):
     # Auto-generate embedding in background thread (non-blocking)
     if len(text) > 50:
         try:
-            import threading
             t = threading.Thread(
                 target=_generate_embedding_async,
                 args=(knowledge_id, text),
@@ -216,7 +229,6 @@ def store_signal(symbol, entry_price, source_type, signal_type=None,
 def get_signals(source_types=None, since=None, limit=100):
     """Get scan signals for backtesting"""
     db = get_db()
-
     query = "SELECT * FROM scan_signals WHERE 1=1"
     params = []
 
@@ -230,19 +242,12 @@ def get_signals(source_types=None, since=None, limit=100):
         params.append(since)
 
     query += " ORDER BY timestamp DESC"
-
     if limit:
         query += f" LIMIT {limit}"
 
     rows = db.execute(query, params).fetchall()
     columns = [desc[0] for desc in db.execute("SELECT * FROM scan_signals LIMIT 1").description]
-
-    results = []
-    for row in rows:
-        signal = dict(zip(columns, row))
-        results.append(signal)
-
-    return results
+    return [dict(zip(columns, row)) for row in rows]
 
 
 def get_latest_signal(symbol, source_types=None):
@@ -257,7 +262,6 @@ def get_latest_signal(symbol, source_types=None):
         params.extend(source_types)
 
     query += " ORDER BY timestamp DESC LIMIT 1"
-
     row = db.execute(query, params).fetchone()
     if not row:
         return None
@@ -349,7 +353,6 @@ def get_pattern_analysis():
             'win_rate': (row[4] / row[3] * 100) if row[3] > 0 else 0,
             'avg_change': row[5],
         })
-
     return patterns
 
 
@@ -379,3 +382,14 @@ def load_list_setting(key, default=None):
 
 def save_list_setting(key, lst):
     save_setting(key, ",".join(lst))
+
+
+def get_user_language(user_id):
+    """Get language preference for a specific user"""
+    from duckscreeener.config.settings import BOT_LANGUAGE
+    return load_setting(f"user_lang_{user_id}", BOT_LANGUAGE)
+
+
+def set_user_language(user_id, lang):
+    """Set language preference for a specific user"""
+    save_setting(f"user_lang_{user_id}", lang)

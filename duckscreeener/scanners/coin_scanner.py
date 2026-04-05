@@ -150,25 +150,29 @@ def scan_potential_coins():
                 'ath_drop': ath_drop,
             })
 
+        # Fetch news ONCE before the loop
+        news_data = []
+        try:
+            news_resp = requests.get(f"{COINGECKO_NEWS_URL}?page=1", timeout=10)
+            if news_resp.status_code == 200:
+                news_data = news_resp.json().get('data', [])[:50]
+        except Exception:
+            pass
+
         for gem in potential_gems:
             news_context = ""
-            try:
-                news_resp = requests.get(f"{COINGECKO_NEWS_URL}?page=1", timeout=10)
-                if news_resp.status_code == 200:
-                    news_data = news_resp.json()
-                    search_terms = [gem['symbol'].lower(), gem['name'].lower(), gem['coin_id'].lower()]
-                    related = []
-                    for item in news_data.get('data', [])[:50]:
-                        title = item.get('title', '').lower()
-                        desc = item.get('description', '').lower()
-                        for term in search_terms:
-                            if len(term) > 2 and (term in title or term in desc):
-                                related.append(f"- {item.get('title', '')[:100]} ({item.get('url', '')})")
-                                break
-                    if related:
-                        news_context = "\nRelated news:\n" + "\n".join(related[:3])
-            except:
-                pass
+            if news_data:
+                search_terms = [gem['symbol'].lower(), gem['name'].lower(), gem['coin_id'].lower()]
+                related = []
+                for item in news_data:
+                    title = item.get('title', '').lower()
+                    desc = item.get('description', '').lower()
+                    for term in search_terms:
+                        if len(term) > 2 and (term in title or term in desc):
+                            related.append(f"- {item.get('title', '')[:100]} ({item.get('url', '')})")
+                            break
+                if related:
+                    news_context = "\nRelated news:\n" + "\n".join(related[:3])
 
             try:
                 price_str = f"${gem['price']:.6f}" if gem['price'] < 1 else f"${gem['price']:.2f}"

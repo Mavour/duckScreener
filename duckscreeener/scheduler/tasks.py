@@ -7,40 +7,40 @@ from duckscreeener.config.settings import (
 )
 from duckscreeener.services.external_apis import fetch_latest_news_with_items, openrouter_chat, fetch_tweets
 from duckscreeener.scanners.backtest import run_backtest
+from duckscreeener.utils.message_split import send_long_message
 
 logger = logging.getLogger(__name__)
-
-MAX_TELEGRAM_MSG = 4000
 
 
 async def send_telegram_message(chat_id, text, parse_mode="Markdown"):
     from telegram import Bot
     bot = Bot(token=TELEGRAM_TOKEN)
+    await send_long_message_raw(bot, chat_id, text, parse_mode)
 
-    if len(text) <= MAX_TELEGRAM_MSG:
+
+async def send_long_message_raw(bot, chat_id, text, parse_mode):
+    """Split message and send via Bot instance"""
+    max_len = 4000
+    if len(text) <= max_len:
         await bot.send_message(chat_id=int(chat_id), text=text, parse_mode=parse_mode)
-    else:
-        parts = text.split("\n\n")
-        current = ""
-        for part in parts:
-            if len(current) + len(part) + 2 > MAX_TELEGRAM_MSG:
-                if current.strip():
-                    await bot.send_message(chat_id=int(chat_id), text=current.strip(), parse_mode=parse_mode)
-                current = part
-            else:
-                current += "\n\n" + part if current else part
-        if current.strip():
-            await bot.send_message(chat_id=int(chat_id), text=current.strip(), parse_mode=parse_mode)
+        return
+
+    parts = text.split("\n\n")
+    current = ""
+    for part in parts:
+        if len(current) + len(part) + 2 > max_len:
+            if current.strip():
+                await bot.send_message(chat_id=int(chat_id), text=current.strip(), parse_mode=parse_mode)
+            current = part
+        else:
+            current += "\n\n" + part if current else part
+    if current.strip():
+        await bot.send_message(chat_id=int(chat_id), text=current.strip(), parse_mode=parse_mode)
 
 
 def send_telegram_message_sync(chat_id, text, parse_mode="Markdown"):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(send_telegram_message(chat_id, text, parse_mode))
-        finally:
-            loop.close()
+        asyncio.run(send_telegram_message(chat_id, text, parse_mode))
         logger.info(f"Message sent to chat {chat_id}")
     except Exception as e:
         logger.error(f"Failed to send Telegram message to {chat_id}: {e}")
@@ -62,7 +62,6 @@ def run_backtest_scheduler():
                 send_telegram_message_sync(BACKTEST_CHAT_ID, report)
                 logger.info("Backtest report sent successfully")
 
-                # Run self-reflection after backtest
                 reflection = run_reflection()
                 if reflection and "error" not in reflection.lower():
                     send_telegram_message_sync(BACKTEST_CHAT_ID, f"Self-Reflection:\n{reflection}")
@@ -73,14 +72,21 @@ def run_backtest_scheduler():
                     "Backtest completed. No signals to evaluate yet.\nRun /scan or /memecoin first to generate signals."
                 )
         except Exception as e:
-            logger.error(f"Backtest scheduler error: {e}")
-            send_telegram_message_sync(BACKTEST_CHAT_ID, f"Backtest error: {e}")
+            logger.error(f"Backtest job error: {e}")
+            try:
+                send_telegram_message_sync(BACKTEST_CHAT_ID, f"Backtest error: {e}")
+            except Exception:
+                pass
 
     schedule.every().day.at(f"{BACKTEST_HOUR:02d}:{BACKTEST_MINUTE:02d}").do(backtest_job)
 
     while True:
-        schedule.run_pending()
-        time.sleep(60)
+        try:
+            schedule.run_pending()
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"Backtest scheduler loop error: {e}")
+            time.sleep(60)
 
 
 def run_daily_news_scheduler():
@@ -90,13 +96,20 @@ def run_daily_news_scheduler():
     logger.info(f"Daily news scheduled for {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}")
 
     def news_job():
-        send_daily_news()
+        try:
+            send_daily_news()
+        except Exception as e:
+            logger.error(f"Daily news job error: {e}")
 
     schedule.every().day.at(f"{SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d}").do(news_job)
 
     while True:
-        schedule.run_pending()
-        time.sleep(60)
+        try:
+            schedule.run_pending()
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"Daily news scheduler loop error: {e}")
+            time.sleep(60)
 
 
 def send_daily_news():
@@ -164,7 +177,4 @@ def send_daily_news():
 
     except Exception as e:
         logger.error(f"Error generating daily news: {e}")
-        send_telegram_message_sync(
-            SCHEDULE_CHAT_ID,
-            f"Failed to generate daily news: {e}"
-        )
+        send_telegram_message_sync(SCHEDULE_CHAT_ID, f"Failed to generate daily news: {e}")

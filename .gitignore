@@ -6,12 +6,19 @@ __pycache__/
 .Python
 venv/
 env/
+*.egg-info/
+dist/
+build/
 
 # Environment
 .env
 
 # Database
 *.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
 
 # Logs
 logs/
@@ -27,5 +34,10 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Test files (optional - can remove if needed)
+# Test files
 test_*.py
+check_*.py
+
+# Legacy files
+crypto_bot.py
+crypto_bot.py.bak

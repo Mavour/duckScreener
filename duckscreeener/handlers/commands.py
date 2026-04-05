@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import re
+import asyncio
 from duckscreeener.config.settings import (
     BOT_LANGUAGE, TELEGRAM_TOKEN, OPENROUTER_API_KEY, SOLANA_SMART_WALLETS,
 )
@@ -22,6 +23,12 @@ from duckscreeener.scanners.memecoin_scanner import (
     scan_new_memecoins, get_ai_memecoin_analysis,
 )
 from duckscreeener.scanners.backtest import run_backtest
+
+
+async def _run_llm(prompt, system="You are a helpful assistant."):
+    """Run LLM call in executor to avoid blocking the async event loop"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system=system))
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +248,9 @@ async def summary(update, context):
             f"IMPORTANT: Each bullet point MUST include the original source link.\n\n{news_text}"
         )
 
-    summary_text = openrouter_chat(prompt, system=system_prompt("summary"))
+    summary_text = await _run_llm(prompt, system_prompt("summary"))
 
+    from duckscreeener.utils.message_split import send_long_message
     source_links = "\n\nSumber:\n"
     for item in news_items[:5]:
         title = item.get('title', '')[:60]
@@ -250,7 +258,7 @@ async def summary(update, context):
         if url:
             source_links += f"- [{title}]({url})\n"
 
-    await update.message.reply_text(f"{summary_text}{source_links}", parse_mode="Markdown")
+    await send_long_message(f"{summary_text}{source_links}", update, parse_mode="Markdown")
 
 
 async def memecoin(update, context):
@@ -303,7 +311,8 @@ async def memecoin_ai(update, context):
     await update.message.reply_chat_action(action="typing")
     await update.message.reply_text("Scanning and analyzing new memecoins with AI...")
 
-    new_coins = scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5)
+    loop = asyncio.get_event_loop()
+    new_coins = await loop.run_in_executor(None, lambda: scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5))
 
     if not new_coins:
         await update.message.reply_text(
@@ -334,23 +343,10 @@ async def memecoin_ai(update, context):
             f"Keep it under 2000 characters."
         )
 
-    analysis = openrouter_chat(prompt, system=system_prompt("memecoin"))
+    analysis = await _run_llm(prompt, system_prompt("memecoin"))
 
-    max_len = 4000
-    if len(analysis) > max_len:
-        parts = analysis.split("\n\n")
-        current = ""
-        for part in parts:
-            if len(current) + len(part) + 2 > max_len:
-                if current:
-                    await update.message.reply_text(current.strip())
-                current = part
-            else:
-                current += "\n\n" + part if current else part
-        if current.strip():
-            await update.message.reply_text(current.strip())
-    else:
-        await update.message.reply_text(analysis)
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message(analysis, update)
 
 
 async def learn(update, context):
@@ -426,7 +422,7 @@ async def health(update, context):
     from duckscreeener.db.database import get_signal_stats, count_knowledge, get_db
 
     test_prompt = "Say OK in three words."
-    openrouter_answer = openrouter_chat(test_prompt, system="You are a simple health-check assistant.")
+    openrouter_answer = await _run_llm(test_prompt, "You are a simple health-check assistant.")
     stored = count_knowledge()
     chat_id = update.effective_chat.id
 
@@ -473,15 +469,17 @@ async def search(update, context):
 
     lines = [translate("search_results").format(query=query)]
     for i, item in enumerate(results):
-        preview = item['text'][:200].replace('\n', ' ')
+        preview = item['text'][:500].replace('\n', ' ')
         sim = item.get('similarity')
         sim_str = f" ({sim:.2f})" if sim is not None else ""
         lines.append(f"{i+1}. [{item['source']}]{sim_str} {preview}...")
-    await update.message.reply_text("\n".join(lines))
+
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message("\n\n".join(lines), update)
 
 
 async def set_lang(update, context):
-    global BOT_LANGUAGE
+    user_id = update.effective_user.id
     if not context.args:
         await update.message.reply_text(translate("set_lang_usage"))
         return
@@ -491,9 +489,8 @@ async def set_lang(update, context):
         settings.AUTO_DETECT_LANG = True
         await update.message.reply_text(translate("auto_detect"))
     elif chosen in ["en", "id"]:
-        from duckscreeener.config import settings
-        settings.AUTO_DETECT_LANG = False
-        settings.BOT_LANGUAGE = chosen
+        from duckscreeener.db.database import set_user_language
+        set_user_language(user_id, chosen)
         await update.message.reply_text(f"Language set to {chosen}.")
     else:
         await update.message.reply_text(translate("set_lang_usage"))
@@ -687,9 +684,9 @@ async def scan_coins(update, context):
         message += f"Vol/MC Ratio: {vm_ratio:.2f} (high = unusual activity)\n"
         message += f"From ATH: -{ath_drop:.0f}%\n"
         if gem.get('analysis'):
-            message += f"Analisis: {gem['analysis'][:200]}\n\n"
-        else:
-            message += "\n"
+            message += f"Analisis: {gem['analysis'][:200]}\n"
+        coin_id = gem.get('coin_id', gem['symbol'].lower())
+        message += f"[CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
 
         scan_record = (
             f"[GEM SCAN] {gem['name']} ({gem['symbol']}) - "
@@ -701,21 +698,8 @@ async def scan_coins(update, context):
 
     message += "\nDYOR! These are accumulation signals, not financial advice."
 
-    max_len = 4000
-    if len(message) > max_len:
-        parts = message.split("\n\n")
-        current = ""
-        for part in parts:
-            if len(current) + len(part) + 2 > max_len:
-                if current.strip():
-                    await update.message.reply_text(current.strip(), parse_mode="Markdown")
-                current = part
-            else:
-                current += "\n\n" + part if current else part
-        if current.strip():
-            await update.message.reply_text(current.strip(), parse_mode="Markdown")
-    else:
-        await status_msg.edit_text(message, parse_mode="Markdown")
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message(message, update, parse_mode="Markdown")
 
 
 async def run_backtest_command(update, context):
@@ -725,21 +709,8 @@ async def run_backtest_command(update, context):
     try:
         report = run_backtest()
         if report:
-            max_len = 4000
-            if len(report) > max_len:
-                parts = report.split("\n\n")
-                current = ""
-                for part in parts:
-                    if len(current) + len(part) + 2 > max_len:
-                        if current.strip():
-                            await update.message.reply_text(current.strip(), parse_mode="Markdown")
-                        current = part
-                    else:
-                        current += "\n\n" + part if current else part
-                if current.strip():
-                    await update.message.reply_text(current.strip(), parse_mode="Markdown")
-            else:
-                await update.message.reply_text(report, parse_mode="Markdown")
+            from duckscreeener.utils.message_split import send_long_message
+            await send_long_message(report, update, parse_mode="Markdown")
         else:
             await update.message.reply_text("Backtest complete. No signals to evaluate.")
     except Exception as e:
@@ -933,42 +904,41 @@ async def handle_message(update, context):
             return
 
         # General chat — AI conversational response
-        recent = get_recent_knowledge(10)
-        history = "\n".join([f"[{item['source']}] {item['text'][:300]}" for item in recent])
+        user_id = update.effective_user.id
+        from duckscreeener.db.database import get_user_language
+        user_lang = get_user_language(user_id)
 
-        full_context = f"""
-KONTEKS KNOWLEDGE BASE
+        recent = get_recent_knowledge(5)
+        history = "\n".join([f"- {item['source']}: {item['text'][:200]}" for item in recent])
 
-Data yang sudah dipelajari:
-{history}
-
----
-Sekarang jawab pertanyaan berikut dengan mempertimbangkan semua knowledge di atas:
-"""
-
-        if BOT_LANGUAGE == "id":
+        if user_lang == "id":
             prompt = (
-                f"{full_context}\n\n"
-                f"Pertanyaan: {text}\n\n"
-                "Sebagai mentor crypto, berikan jawaban yang:\n"
-                "1. Menggunakan data dari knowledge base\n"
-                "2. Berbasis data (bukan opini kosong)\n"
-                "3. Include risk warning jika perlu\n\n"
-                "RESPOND ENTIRELY IN INDONESIAN."
+                f"Kamu adalah AI crypto assistant yang ngobrol natural seperti teman diskusi.\n"
+                f"Jawab pertanyaan user dengan santai tapi informatif.\n"
+                f"Gunakan data dari knowledge base kalau relevan, tapi jangan terlalu kaku.\n"
+                f"Kalau user tanya tentang pengalaman belajar kamu, ceritakan dari data yang ada.\n\n"
+                f"Data terakhir yang dipelajari:\n{history}\n\n"
+                f"Pertanyaan user: {text}\n\n"
+                f"Jawab dalam bahasa Indonesia yang natural, seperti ngobrol biasa. "
+                f"Jangan sebutkan 'code' atau 'function'. Jangan jawab seperti bot."
             )
-            system_msg = "Anda adalah mentor crypto yang menggunakan semua knowledge yang sudah dipelajari untuk memberikan jawaban terbaik."
+            system_msg = "Kamu adalah AI crypto assistant yang ngobrol natural, bukan bot kaku. Jawab seperti teman diskusi yang berpengalaman di crypto."
         else:
             prompt = (
-                f"{full_context}\n\n"
-                f"Question: {text}\n\n"
-                "As a crypto mentor, provide answer that:\n"
-                "1. Uses data from knowledge base\n"
-                "2. Is data-driven\n"
-                "3. Include risk warning if needed"
+                f"You are a crypto AI assistant that chats naturally like a discussion partner.\n"
+                f"Answer the user's question casually but informatively.\n"
+                f"Use knowledge base data if relevant, but don't be too rigid.\n"
+                f"If user asks about your learning experience, tell them from the data you have.\n\n"
+                f"Recent knowledge:\n{history}\n\n"
+                f"User question: {text}\n\n"
+                f"Answer naturally, like a normal conversation. "
+                f"Don't mention 'code' or 'function'. Don't answer like a bot."
             )
-            system_msg = "You are a crypto mentor using all learned knowledge to provide the best answers."
+            system_msg = "You are a crypto AI assistant that chats naturally, not a stiff bot. Answer like an experienced crypto discussion partner."
 
-        ans = openrouter_chat(prompt, system=system_msg)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        ans = await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system=system_msg))
         await msg.reply_text(ans)
 
         store_knowledge("user:question", text)

@@ -117,13 +117,33 @@ def search_semantic(query, limit=5):
         from duckscreeener.db.database import search_knowledge
         return search_knowledge(query, limit)
 
-    rows = db.execute(
-        """
-        SELECT ke.knowledge_id, ke.embedding, k.source, k.text, k.timestamp
-        FROM knowledge_embeddings ke
-        JOIN knowledge k ON ke.knowledge_id = k.id
-        """
-    ).fetchall()
+    # First narrow down with FTS5 to avoid loading all embeddings
+    from duckscreeener.db.database import get_db
+    db = get_db()
+    try:
+        fts_rows = db.execute(
+            "SELECT id FROM knowledge_fts WHERE knowledge_fts MATCH ? LIMIT ?",
+            (query, limit * 4)
+        ).fetchall()
+    except Exception:
+        fts_rows = []
+
+    if fts_rows:
+        # Only compute similarity for FTS5 candidates
+        candidate_ids = [r[0] for r in fts_rows]
+        placeholders = ", ".join(["?"] * len(candidate_ids))
+        rows = db.execute(
+            f"SELECT ke.knowledge_id, ke.embedding, k.source, k.text, k.timestamp "
+            f"FROM knowledge_embeddings ke JOIN knowledge k ON ke.knowledge_id = k.id "
+            f"WHERE ke.knowledge_id IN ({placeholders})",
+            candidate_ids
+        ).fetchall()
+    else:
+        # Fallback: load all embeddings
+        rows = db.execute(
+            "SELECT ke.knowledge_id, ke.embedding, k.source, k.text, k.timestamp "
+            "FROM knowledge_embeddings ke JOIN knowledge k ON ke.knowledge_id = k.id"
+        ).fetchall()
 
     if not rows:
         from duckscreeener.db.database import search_knowledge
