@@ -303,14 +303,19 @@ async def memecoin(update, context):
 
         message += f"\U0001F517 [DexScreener]({coin['dex_screener_url']}) | [GMGN]({coin['gmgn_url']})\n\n"
 
-        from duckscreeener.db.database import store_knowledge
-        record = (
-            f"[NEW MEMECOIN] {coin['name']} ({coin['symbol']}) - "
-            f"Price: {price_str}, 1h: {coin['price_change_1h']:.1f}%, "
-            f"Age: {coin['age_hours']:.1f}h, Score: {coin['score']}, "
-            f"Rating: {coin['rating']}, Narrative: {', '.join(coin['narrative'])}"
+        from duckscreeener.db.database import store_signal
+        store_signal(
+            symbol=coin['symbol'],
+            entry_price=coin['price'],
+            source_type='memecoin',
+            signal_type=f"NEW ({coin['age_hours']:.1f}h)",
+            token_address=coin['address'],
+            market_cap=coin['market_cap'],
+            volume=coin['volume_1h'],
+            score=coin['score'],
+            narrative=', '.join(coin['narrative']),
+            analysis='; '.join(coin['signals'][:3]),
         )
-        store_knowledge(f"memecoin:{coin['symbol']}", record)
 
     message += "\nDYOR! These are early signals, not financial advice."
 
@@ -406,24 +411,40 @@ async def memory(update, context):
     await update.message.reply_chat_action(action="typing")
     total = count_knowledge()
     if total == 0:
-        await update.message.reply_text("Knowledge base is empty.")
+        await update.message.reply_text("\U0001F9E0 Knowledge base is empty.")
         return
 
     try:
-        count = int(context.args[0]) if context.args else 3
+        count = int(context.args[0]) if context.args else 5
         count = max(1, min(20, count))
     except ValueError:
-        count = 3
+        count = 5
 
     items = get_recent_knowledge(count)
-    lines = []
+    lines = ["\U0001F9E0 Memory entries (latest first):\n"]
     for i, item in enumerate(items):
         import time
-        ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(item['timestamp']))
-        preview = item['text'][:280].replace('\n', ' ')
-        lines.append(f"{i+1}. [{ts}] {item['source']}: {preview}...")
+        ts = time.strftime('%Y-%m-%d %H:%M', time.localtime(item['timestamp']))
+        preview = item['text'][:200].replace('\n', ' ')
+        source = item['source']
 
-    await update.message.reply_text("Memory entries (latest first):\n" + "\n".join(lines))
+        if source.startswith('pdf:'):
+            emoji = "\U0001F4C4"
+        elif source.startswith('youtube:'):
+            emoji = "\U0001F4FA"
+        elif source.startswith('twitter:') or source.startswith('tweet:'):
+            emoji = "\U0001F426"
+        elif source.startswith('user:'):
+            emoji = "\U0001F4AC"
+        elif source.startswith('reflection:'):
+            emoji = "\U0001F914"
+        else:
+            emoji = "\U0001F4D6"
+
+        lines.append(f"{emoji} {i+1}. [{ts}] **{source}**\n{preview}...")
+
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message("\n\n".join(lines), update, parse_mode="Markdown")
 
 
 async def health(update, context):
@@ -444,22 +465,22 @@ async def health(update, context):
     stats_text = ""
     if stats and stats['total'] > 0:
         stats_text = (
-            f"\nSignal Stats:\n"
+            f"\n\U0001F4CA Signal Stats:\n"
             f"- Total checked: {stats['total']}\n"
             f"- Win rate: {stats['win_rate']:.1f}%\n"
             f"- Avg change: {stats['avg_change']:+.1f}%"
         )
 
     await update.message.reply_text(
-        f"Health check:\n"
-        f"- Bot process: connected\n"
-        f"- Telegram token: {'set' if TELEGRAM_TOKEN else 'missing'}\n"
-        f"- OpenRouter key: {'set' if OPENROUTER_API_KEY else 'missing'}\n"
-        f"- OpenRouter test: {openrouter_answer[:200]}\n"
-        f"- Knowledge entries: {stored}\n"
-        f"- Scan signals: {signal_count}\n"
-        f"- Signal outcomes: {outcome_count}{stats_text}\n"
-        f"- Your chat_id: `{chat_id}`"
+        f"\U0001F50D Health check:\n\n"
+        f"\U0001F916 Bot process: connected\n"
+        f"\U0001F511 Telegram token: {'set' if TELEGRAM_TOKEN else 'missing'}\n"
+        f"\U0001F511 OpenRouter key: {'set' if OPENROUTER_API_KEY else 'missing'}\n"
+        f"\U0001F9EA OpenRouter test: {openrouter_answer[:200]}\n"
+        f"\U0001F9E0 Knowledge entries: {stored}\n"
+        f"\U0001F4CA Scan signals: {signal_count}\n"
+        f"\U0001F4C8 Signal outcomes: {outcome_count}{stats_text}\n"
+        f"\U0001F464 Your chat_id: `{chat_id}`"
     )
 
 
@@ -744,14 +765,6 @@ async def scan_coins(update, context):
             message += f"\U0001F4DD Analisis: {gem['analysis'][:200]}\n"
         coin_id = gem.get('coin_id', gem['symbol'].lower())
         message += f"\U0001F517 [CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
-
-        scan_record = (
-            f"[GEM SCAN] {gem['name']} ({gem['symbol']}) - "
-            f"Price: {price_str}, 24h: {change_24h}, Volume: {volume_str}, "
-            f"Type: {gem['gem_type']}, Vol/MC: {vm_ratio:.2f}, "
-            f"Analysis: {gem.get('analysis', 'N/A')[:200]}"
-        )
-        store_knowledge(f"scan:{gem['symbol']}", scan_record)
 
     message += "\nDYOR! These are accumulation signals, not financial advice."
 

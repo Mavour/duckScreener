@@ -92,13 +92,17 @@ def run_coin_scanner():
                     coin_id = gem.get('coin_id', gem['symbol'].lower())
                     message += f"[CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
 
-                    from duckscreeener.db.database import store_knowledge
-                    scan_record = (
-                        f"[GEM SCAN] {gem['name']} ({gem['symbol']}) - "
-                        f"Price: {price_str}, 24h: {change_24h}, Volume: {volume_str}, "
-                        f"Type: {gem['gem_type']}, Analysis: {gem.get('analysis', 'N/A')[:200]}"
+                    from duckscreeener.db.database import store_signal
+                    store_signal(
+                        symbol=gem['symbol'],
+                        entry_price=gem['price'],
+                        source_type='scan',
+                        signal_type=gem['gem_type'],
+                        market_cap=gem['market_cap'],
+                        volume=gem['volume'],
+                        score=int(gem['vol_mcap_ratio'] * 100),
+                        analysis=gem.get('analysis', '')[:500],
                     )
-                    store_knowledge(f"scan:{gem['symbol']}", scan_record)
 
                 message += "\nDo your own research before investing!"
                 from duckscreeener.config.settings import SCAN_CHAT_ID
@@ -140,14 +144,19 @@ def run_gmgn_scanner():
                         message += f"Signals: {'; '.join(alert['signals'][:2])}\n"
                     message += f"[DexScreener]({alert['dex_screener_url']}) | [GMGN]({alert['gmgn_url']})\n\n"
 
-                    from duckscreeener.db.database import store_knowledge
-                    gmgn_record = (
-                        f"[GMGN GEM] {alert['name']} ({alert['symbol']}) - "
-                        f"Price: {price_str}, 1h: {alert['price_change_1h']:.1f}%, "
-                        f"Age: {alert['age_hours']:.1f}h, Score: {alert['score']}, "
-                        f"Rating: {alert['rating']}, Token: {alert['address']}"
+                    from duckscreeener.db.database import store_signal
+                    store_signal(
+                        symbol=alert['symbol'],
+                        entry_price=alert.get('price', 0),
+                        source_type='memecoin',
+                        signal_type=f"GMGN ({alert['age_hours']:.1f}h)",
+                        token_address=alert['address'],
+                        market_cap=alert.get('market_cap', 0),
+                        volume=alert.get('volume_24h', 0),
+                        score=alert.get('score', 0),
+                        narrative=', '.join(alert.get('narrative', ['Unknown'])),
+                        analysis='; '.join(alert.get('signals', [])[:3]),
                     )
-                    store_knowledge(f"gmgn:{alert['symbol']}", gmgn_record)
 
                 message += "\n_Always do your own research!_"
                 from duckscreeener.config.settings import SOLANA_CHAT_ID
