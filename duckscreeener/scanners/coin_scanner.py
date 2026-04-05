@@ -18,6 +18,10 @@ EXCLUDED_SYMBOLS = {
     "SOL", "WSOL", "USDC", "USDT", "BUSD", "DAI", "ETH", "WETH", "BTC", "WBTC",
     "RAY", "JUP", "JTO", "ORCA", "MNGO", "SRM", "MSOL", "STSOL",
     "RENDER", "PYTH",
+    "REUR", "RUSD", "EURS", "EURT", "EURC", "EUROC",
+    "USDP", "TUSD", "USDD", "FRAX", "LUSD", "SUSD", "GUSD", "USDK",
+    "USDN", "USTC", "USDB", "USDE", "CUSD", "VUSD",
+    "PAXG", "XAUT",
 }
 
 
