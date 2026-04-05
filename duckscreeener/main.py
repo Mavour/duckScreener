@@ -120,17 +120,21 @@ def run_coin_scanner():
 
 def run_gmgn_scanner():
     from duckscreeener.scanners.memecoin_scanner import scan_new_memecoins
+    from datetime import datetime
     log_activity("GMGN_SCANNER", "GMGN memecoin scanner started - interval: 30 minutes")
     while True:
         try:
             alerts = scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5)
             if alerts:
-                message = "GMGN MEMECOIN ALERT\n_Smart money tracking from GMGN_\n\n"
+                scan_time = datetime.now().strftime("%H:%M")
+                message = f"GMGN MEMECOIN ALERT — Scanned at {scan_time}\n_Smart money tracking from GMGN_\n\n"
                 for alert in alerts:
                     price = alert.get('price', 0)
                     price_str = f"${price:.8f}" if price < 0.001 else f"${price:.6f}"
                     liquidity_str = f"${alert['liquidity']/1_000:.1f}K"
                     volume_str = f"${alert['volume_24h']/1_000:.1f}K"
+                    mc = alert.get('market_cap', 0)
+                    mc_str = f"${mc/1000:.0f}K" if mc < 1_000_000 else f"${mc/1_000_000:.1f}M"
                     smart_buys = alert.get('volume_liq_ratio', 0)
                     holders = alert.get('holder_count', 0)
 
@@ -140,7 +144,7 @@ def run_gmgn_scanner():
                     message += f"{rating_emoji} [{alert['rating']}] Score: {alert['score']}\n"
                     message += f"*{alert['name']} ({alert['symbol']})*\n"
                     message += f"Price: {price_str} | 1h: {'+' if alert['price_change_1h'] > 0 else ''}{alert['price_change_1h']:.1f}%\n"
-                    message += f"Age: {alert['age_hours']:.1f}h | Vol: {volume_str} | Liq: {liquidity_str}\n"
+                    message += f"Age: {alert['age_hours']:.1f}h | Vol: {volume_str} | Liq: {liquidity_str} | MC: {mc_str}\n"
                     message += f"Narrative: {', '.join(alert.get('narrative', ['Unknown']))}\n"
                     if alert.get('signals'):
                         message += f"Signals: {'; '.join(alert['signals'][:2])}\n"

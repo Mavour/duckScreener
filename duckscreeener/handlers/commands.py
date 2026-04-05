@@ -295,7 +295,9 @@ async def memecoin(update, context):
         return
 
     message = "\U0001F525 NEW MEMECOINS WITH HYPE POTENTIAL\n"
-    message += "Scanning for coins BEFORE they pump\n\n"
+    from datetime import datetime
+    scan_time = datetime.now().strftime("%H:%M")
+    message += f"Scanned at {scan_time} — finding coins BEFORE they pump\n\n"
 
     for coin in new_coins[:5]:
         if coin['rating'] == 'HIGH':
