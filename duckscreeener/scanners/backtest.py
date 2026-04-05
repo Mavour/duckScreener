@@ -122,13 +122,21 @@ def extract_entry_price_from_text(text):
 
 def run_backtest(chat_id=None):
     """
-    Run backtest on all stored signals.
+    Run backtest on today's signals only (since midnight).
     Compares entry price with current price.
     Records outcomes and returns report.
     """
     try:
-        # Get all signals from structured table
-        signals = get_signals(source_types=['scan', 'memecoin', 'gmgn', 'solana'], limit=200)
+        # Get today's signals only (since midnight)
+        import time as time_module
+        today_start = time_module.mktime(
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timetuple()
+        )
+        signals = get_signals(
+            source_types=['scan', 'memecoin', 'gmgn', 'solana'],
+            since=today_start,
+            limit=200
+        )
 
         # Also check legacy knowledge records (fallback)
         from duckscreeener.db.database import get_all_knowledge_by_source_prefix
