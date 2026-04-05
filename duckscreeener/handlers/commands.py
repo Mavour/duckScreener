@@ -870,7 +870,10 @@ async def _analyze_coin_on_demand(update, context, coin_query):
         return
 
     await update.message.reply_chat_action(action="typing")
-    status_msg = await update.message.reply_text(f"\U0001F50D Menganalisis {coin_query}...")
+    status_msg = await update.message.reply_text(
+        f"\U0001F50D Menganalisis {coin_query}...\n"
+        f"_Mohon tunggu, sedang mengambil data dan menganalisis._"
+    )
 
     # Fetch real-time data
     from duckscreeener.services.external_apis import fetch_latest_news_with_items
