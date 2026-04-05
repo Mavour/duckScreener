@@ -55,6 +55,63 @@ def log_activity(action_type: str, details: str, status: str = "success"):
     logger.info(log_entry)
 
 
+def run_coin_scanner():
+    log_activity("SCANNER", "Coin scanner started")
+    while True:
+        try:
+            gems = scan_potential_coins()
+            if gems:
+                message = "WHALE ACCUMULATION DETECTION\n\n"
+                for gem in gems:
+                    price_str = f"${gem['price']:.6f}" if gem['price'] < 1 else f"${gem['price']:.2f}"
+                    change_1h = f"+{gem['change_1h']:.2f}%" if gem['change_1h'] > 0 else f"{gem['change_1h']:.2f}%"
+                    change_24h = f"+{gem['change_24h']:.2f}%" if gem['change_24h'] > 0 else f"{gem['change_24h']:.2f}%"
+                    volume_str = f"${gem['volume']/1_000_000:.1f}M"
+                    vm_ratio = gem.get('vol_mcap_ratio', 0)
+                    ath_drop = gem.get('ath_drop', 0)
+
+                    gem_type = gem.get('gem_type', '')
+                    if 'WHALE' in gem_type:
+                        gem_emoji = "\U0001F40B"
+                    elif 'SILENT' in gem_type:
+                        gem_emoji = "\U0001F92B"
+                    elif 'EARLY' in gem_type:
+                        gem_emoji = "\u26A1"
+                    elif 'DEEP' in gem_type:
+                        gem_emoji = "\U0001F48E"
+                    else:
+                        gem_emoji = "\U0001F50D"
+
+                    message += f"{gem_emoji} {gem_type}\n"
+                    message += f"*{gem['name']} ({gem['symbol']})*\n"
+                    message += f"Price: {price_str} | 1h: {change_1h} | 24h: {change_24h}\n"
+                    message += f"Vol: {volume_str} | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
+                    message += f"Vol/MC: {vm_ratio:.2f} | ATH: -{ath_drop:.0f}%\n"
+                    if gem.get('analysis'):
+                        message += f"Analisis: {gem['analysis'][:150]}...\n\n"
+                    else:
+                        message += "\n"
+
+                    from duckscreeener.db.database import store_knowledge
+                    scan_record = (
+                        f"[GEM SCAN] {gem['name']} ({gem['symbol']}) - "
+                        f"Price: {price_str}, 24h: {change_24h}, Volume: {volume_str}, "
+                        f"Type: {gem['gem_type']}, Analysis: {gem.get('analysis', 'N/A')[:200]}"
+                    )
+                    store_knowledge(f"scan:{gem['symbol']}", scan_record)
+
+                message += "\nDo your own research before investing!"
+                from duckscreeener.config.settings import SCAN_CHAT_ID
+                if SCAN_CHAT_ID:
+                    send_telegram_message_sync(SCAN_CHAT_ID, message)
+                log_activity("COIN_SCAN", f"Found {len(gems)} gems and sent alert", "success")
+        except Exception as e:
+            log_activity("SCANNER", f"Error: {e}", "error")
+
+        import time
+        time.sleep(SCAN_INTERVAL_MINUTES * 60)
+
+
 def run_gmgn_scanner():
     from duckscreeener.scanners.memecoin_scanner import scan_new_memecoins
     log_activity("GMGN_SCANNER", "GMGN memecoin scanner started - interval: 30 minutes")
@@ -179,6 +236,11 @@ def main():
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
+    if SCAN_ENABLED:
+        scanner_thread = threading.Thread(target=run_coin_scanner, daemon=True)
+        scanner_thread.start()
+        log_activity("BOT_START", "Coin scanner thread started (every 6 hours)", "success")
 
     if GMGN_ENABLED:
         gmgn_thread = threading.Thread(target=run_gmgn_scanner, daemon=True)
