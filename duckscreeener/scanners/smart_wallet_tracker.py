@@ -116,16 +116,20 @@ def get_trending_memecoins(limit=20):
 def get_top_traders(token_address, limit=20):
     """Get top traders for a token from DexScreener"""
     try:
-        url = f"{DEXSCREENER_BASE}/v2/tokens/top_traders"
-        params = {"address": token_address, "limit": limit}
-        resp = requests.get(url, params=params, timeout=15)
+        # DexScreener doesn't have a public top_traders endpoint
+        # We'll use the token info and estimate from volume/liquidity
+        # For actual wallet tracking, we rely on Solana RPC analysis
+        url = f"{DEXSCREENER_BASE}/tokens/{token_address}"
+        resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
-            if data.get('success'):
-                return data.get('data', {}).get('items', [])
+            pairs = data.get('pairs') or []
+            if pairs:
+                # Return token info, actual wallet discovery happens via RPC
+                return [{'token_address': token_address, 'pairs': len(pairs)}]
         return []
     except Exception as e:
-        logger.debug(f"Top traders error for {token_address}: {e}")
+        logger.debug(f"Token info error for {token_address}: {e}")
         return []
 
 
@@ -260,29 +264,54 @@ def analyze_wallet(wallet_address, token_symbol="", token_address=""):
 def discover_smart_wallets():
     """
     Main discovery loop:
-    1. Get trending memecoins
-    2. Get top traders per token
-    3. Validate each wallet
-    4. Store qualified wallets
+    1. Get trending memecoins from DexScreener
+    2. Get recent transactions via Solana RPC
+    3. Find early buyers from token transfers
+    4. Validate wallets against strict criteria
+    5. Store qualified wallets
     """
     logger.info("Starting smart wallet discovery...")
     trending = get_trending_memecoins(limit=20)
 
     if not trending:
         logger.warning("No trending memecoins found")
-        return 0
+        return 0, 0
 
+    logger.info(f"Found {len(trending)} trending memecoins")
     discovered_count = 0
+    checked_count = 0
     current_wallets = get_all_smart_wallets(limit=MAX_WALLETS)
     current_addresses = {w['address'] for w in current_wallets}
 
-    for coin in trending[:15]:
-        traders = get_top_traders(coin['address'], limit=10)
+    for coin in trending[:10]:
+        # Get recent transactions for this token
+        txs = get_wallet_transactions(coin['address'], limit=20)
+        if not txs:
+            continue
 
-        for trader in traders[:5]:
-            wallet_addr = trader.get('wallet', '')
-            if not wallet_addr or wallet_addr in current_addresses or wallet_addr in _discovered_wallets:
+        # Extract unique wallets from transactions
+        candidate_wallets = set()
+        for tx_info in txs[:15]:
+            sig = tx_info.get('signature', '')
+            tx = get_transaction_details(sig)
+            if not tx:
                 continue
+
+            meta = tx.get('meta', {})
+            post_tb = meta.get('postTokenBalances', [])
+            for bal in post_tb:
+                mint = bal.get('mint', '')
+                owner = bal.get('owner', '')
+                if mint == coin['address'] and owner and owner not in current_addresses:
+                    candidate_wallets.add(owner)
+
+        logger.info(f"  {coin['symbol']}: {len(candidate_wallets)} candidate wallets")
+
+        for wallet_addr in list(candidate_wallets)[:5]:
+            if wallet_addr in current_addresses or wallet_addr in _discovered_wallets:
+                continue
+
+            checked_count += 1
 
             # Analyze wallet
             result = analyze_wallet(wallet_addr, coin['symbol'], coin['address'])
@@ -314,8 +343,8 @@ def discover_smart_wallets():
         max_wallets=MAX_WALLETS,
     )
 
-    logger.info(f"Smart wallet discovery complete: {discovered_count} new wallets found")
-    return discovered_count
+    logger.info(f"Smart wallet discovery complete: {discovered_count} new wallets found, {checked_count} checked")
+    return discovered_count, checked_count
 
 
 def monitor_smart_wallets():

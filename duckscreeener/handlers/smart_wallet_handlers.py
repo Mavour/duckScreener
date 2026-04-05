@@ -105,11 +105,20 @@ async def smartwallet_remove(update, context):
 async def smartwallet_discover(update, context):
     """Trigger smart wallet discovery"""
     await update.message.reply_chat_action(action="typing")
-    status_msg = await update.message.reply_text("🔍 Discovering new smart wallets...")
+    status_msg = await update.message.reply_text("🔍 Discovering new smart wallets... This may take a minute.")
 
-    count = discover_smart_wallets()
+    result = discover_smart_wallets()
+    if isinstance(result, tuple):
+        count, checked = result
+    else:
+        count = result
+        checked = 0
 
     if count > 0:
-        await status_msg.edit_text(f"✅ Found {count} new smart wallets!\nUse /smartwallets to see the list.")
+        await status_msg.edit_text(f"✅ Found {count} new smart wallets! ({checked} wallets checked)\nUse /smartwallets to see the list.")
     else:
-        await status_msg.edit_text("No new smart wallets found this round. Try again later.")
+        await status_msg.edit_text(
+            f"🔍 Discovery complete: {checked} wallets checked, no new smart wallets found.\n\n"
+            f"Criteria: Win Rate ≥ 60%, Min Trade $50, ≥ 3 unique tokens, ≥ 5 trades.\n"
+            f"Try again later or add wallets manually with /smartwallet_add."
+        )
