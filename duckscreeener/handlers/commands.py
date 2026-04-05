@@ -808,6 +808,28 @@ async def handle_message(update, context):
             await msg.reply_text(f"Link received: {text[:80]}")
             return
 
+        # Check if user is replying to a bot message with analysis request
+        if msg.reply_to_message and msg.reply_to_message.from_user.id == context.bot.id:
+            reply_text = msg.reply_to_message.text or ""
+            if any(kw in text.lower() for kw in ['analisa', 'analyze', 'analisis', 'detail', 'jelasin', 'explain', 'kenapa', 'bagaimana', 'gimana', 'info']):
+                # Try to find coin symbol in the replied message
+                import re
+                symbol_match = re.search(r'\(([A-Z]{2,10})\)', reply_text)
+                if symbol_match:
+                    symbol = symbol_match.group(1)
+                    await _analyze_coin_on_demand(update, context, symbol)
+                    return
+
+                # Try to find coin name
+                name_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*\(', reply_text)
+                if name_match:
+                    name = name_match.group(1)
+                    await _analyze_coin_on_demand(update, context, name)
+                    return
+
+                await msg.reply_text("Tidak bisa menemukan coin yang dimaksud. Coba sebutkan nama coin-nya.")
+                return
+
         # Intent-based handling
         from duckscreeener.agent.intent_parser import parse_intent, get_natural_response
         intent, params = parse_intent(text)
@@ -862,6 +884,175 @@ async def handle_message(update, context):
         loop = asyncio.get_event_loop()
         ans = await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system=system_msg))
         await msg.reply_text(ans)
+
+
+async def _analyze_coin_on_demand(update, context, coin_query):
+    """On-demand AI analysis of a specific coin with knowledge base context"""
+    user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
+
+    await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text(f"\U0001F50D Menganalisis {coin_query}...")
+
+    # Fetch real-time data
+    from duckscreeener.services.external_apis import fetch_latest_news_with_items
+    from duckscreeener.scanners.coin_scanner import COINGECKO_API_URL
+    import requests
+
+    coin_data = None
+    current_price = None
+
+    # Try CoinGecko search
+    try:
+        search_url = f"{COINGECKO_API_URL}/search"
+        resp = requests.get(search_url, params={'query': coin_query}, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            coins = data.get('coins', [])
+            if coins:
+                coin_id = coins[0].get('id', '')
+                # Get market data
+                market_url = f"{COINGECKO_API_URL}/coins/{coin_id}"
+                market_resp = requests.get(market_url, params={
+                    'localization': 'false',
+                    'tickers': 'false',
+                    'market_data': 'true',
+                    'community_data': 'false',
+                    'developer_data': 'false',
+                }, timeout=10)
+                if market_resp.status_code == 200:
+                    coin_info = market_resp.json()
+                    md = coin_info.get('market_data', {})
+                    coin_data = {
+                        'name': coin_info.get('name', coin_query),
+                        'symbol': coin_info.get('symbol', '').upper(),
+                        'price': md.get('current_price', {}).get('usd', 0),
+                        'change_24h': md.get('price_change_percentage_24h', 0),
+                        'change_7d': md.get('price_change_percentage_7d', 0),
+                        'market_cap': md.get('market_cap', {}).get('usd', 0),
+                        'volume': md.get('total_volume', {}).get('usd', 0),
+                        'ath': md.get('ath', {}).get('usd', 0),
+                        'description': (coin_info.get('description', {}).get('en', '') or '')[:500],
+                    }
+                    current_price = coin_data['price']
+    except Exception as e:
+        logger.debug(f"CoinGecko search error: {e}")
+
+    # Fallback: try DexScreener
+    if not coin_data:
+        try:
+            ds_url = f"https://api.dexscreener.com/latest/dex/search?q={coin_query}+solana"
+            resp = requests.get(ds_url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                pairs = data.get('pairs') or []
+                if pairs:
+                    pair = pairs[0]
+                    base = pair.get('baseToken', {})
+                    coin_data = {
+                        'name': base.get('name', coin_query),
+                        'symbol': base.get('symbol', '').upper(),
+                        'price': float(pair.get('priceUsd', 0) or 0),
+                        'change_24h': float(pair.get('priceChange', {}).get('h24', 0) or 0),
+                        'market_cap': float(pair.get('fdv', 0) or 0),
+                        'volume': float(pair.get('volume', {}).get('h24', 0) or 0),
+                        'liquidity': float(pair.get('liquidity', {}).get('usd', 0) or 0),
+                        'description': '',
+                    }
+                    current_price = coin_data['price']
+        except Exception as e:
+            logger.debug(f"DexScreener search error: {e}")
+
+    if not coin_data:
+        await status_msg.edit_text(f"Tidak bisa menemukan data untuk {coin_query}. Coba nama atau symbol yang lebih spesifik.")
+        return
+
+    # Build data summary
+    price_str = f"${coin_data['price']:.6f}" if coin_data['price'] < 1 else f"${coin_data['price']:.2f}"
+    mc_str = f"${coin_data['market_cap']/1_000_000:.1f}M" if coin_data.get('market_cap', 0) > 1_000_000 else f"${coin_data.get('market_cap', 0)/1000:.0f}K"
+    vol_str = f"${coin_data['volume']/1_000_000:.1f}M" if coin_data.get('volume', 0) > 1_000_000 else f"${coin_data.get('volume', 0)/1000:.0f}K"
+
+    data_summary = (
+        f"Coin: {coin_data['name']} ({coin_data['symbol']})\n"
+        f"Price: {price_str}\n"
+        f"24h Change: {coin_data.get('change_24h', 0):+.1f}%\n"
+        f"7d Change: {coin_data.get('change_7d', 0):+.1f}%\n"
+        f"Market Cap: {mc_str}\n"
+        f"Volume 24h: {vol_str}\n"
+    )
+    if coin_data.get('ath'):
+        ath_drop = ((coin_data['ath'] - coin_data['price']) / coin_data['ath'] * 100) if coin_data['ath'] > 0 else 0
+        data_summary += f"From ATH: -{ath_drop:.0f}%\n"
+    if coin_data.get('liquidity'):
+        data_summary += f"Liquidity: ${coin_data['liquidity']/1000:.0f}K\n"
+    if coin_data.get('description'):
+        data_summary += f"Description: {coin_data['description'][:300]}\n"
+
+    # Get knowledge base context
+    recent = get_recent_knowledge(5)
+    kb_context = ""
+    if recent:
+        kb_context = "\nPengetahuan yang sudah dipelajari:\n"
+        for item in recent:
+            source_type = item['source'].split(':')[0]
+            kb_context += f"- [{source_type}] {item['text'][:200]}...\n"
+
+    # Get recent news about this coin
+    news_context = ""
+    try:
+        news_items = fetch_latest_news_with_items(limit=20)
+        related = []
+        for item in news_items:
+            title = item.get('title', '').lower()
+            desc = item.get('description', '').lower()
+            sym = coin_data.get('symbol', '').lower()
+            name = coin_data.get('name', '').lower()
+            if sym in title or name in title or sym in desc or name in desc:
+                related.append(f"- {item.get('title', '')[:150]} ({item.get('url', '')})")
+        if related:
+            news_context = f"\nBerita terkait:\n" + "\n".join(related[:5])
+    except Exception:
+        pass
+
+    # LLM analysis
+    if BOT_LANGUAGE == "id":
+        prompt = (
+            f"Kamu adalah crypto analyst profesional. Analisis coin berikut secara mendalam.\n\n"
+            f"Data coin:\n{data_summary}\n\n"
+            f"{news_context}\n\n"
+            f"{kb_context}\n\n"
+            f"Berikan analisis yang mencakup:\n"
+            f"1. Overview singkat tentang coin ini\n"
+            f"2. Analisis teknikal (tren, momentum, support/resistance jika ada data)\n"
+            f"3. Analisis fundamental (use case, tim, partnership jika ada)\n"
+            f"4. Sentiment market saat ini\n"
+            f"5. Risiko yang perlu diperhatikan\n"
+            f"6. Apakah coin ini menarik untuk di-follow berdasarkan data dan pengetahuanmu?\n\n"
+            f"Jawab dalam bahasa Indonesia yang natural dan conversational."
+        )
+    else:
+        prompt = (
+            f"You are a professional crypto analyst. Analyze this coin in depth.\n\n"
+            f"Coin data:\n{data_summary}\n\n"
+            f"{news_context}\n\n"
+            f"{kb_context}\n\n"
+            f"Provide analysis covering:\n"
+            f"1. Brief overview\n"
+            f"2. Technical analysis\n"
+            f"3. Fundamental analysis\n"
+            f"4. Market sentiment\n"
+            f"5. Risks to watch\n"
+            f"6. Is this coin worth following based on your knowledge?\n\n"
+            f"Answer in natural, conversational language."
+        )
+
+    analysis = await _run_llm(prompt, "You are a crypto analyst providing deep coin analysis with knowledge from past learnings.")
+
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message(analysis, update)
 
 
 async def _handle_intent(update, context, intent, params):
