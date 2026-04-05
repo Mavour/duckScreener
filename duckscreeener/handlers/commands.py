@@ -294,63 +294,56 @@ async def memecoin(update, context):
         )
         return
 
-    # Build data summary for LLM
-    data_summary = ""
+    from datetime import datetime
+    scan_time = datetime.now().strftime("%H:%M")
+    message = "\U0001F525 NEW MEMECOINS WITH HYPE POTENTIAL\n"
+    message += f"Scanned at {scan_time} — finding coins BEFORE they pump\n\n"
+
     for coin in new_coins[:5]:
+        if coin['rating'] == 'HIGH':
+            rating_emoji = "\U0001F680"
+        elif coin['rating'] == 'MEDIUM':
+            rating_emoji = "\u26A1"
+        else:
+            rating_emoji = "\U0001F4CA"
+        message += f"{rating_emoji} [{coin['rating']}] Score: {coin['score']}\n"
+        message += f"{coin['name']} ({coin['symbol']})\n"
+        message += f"\U0001F550 Scanned at: {get_first_scan_time(coin['symbol'], 'memecoin')}\n"
         price_str = f"${coin['price']:.8f}" if coin['price'] < 0.001 else f"${coin['price']:.6f}"
         mc = coin.get('market_cap', 0)
         mc_str = f"${mc/1000:.0f}K" if mc < 1_000_000 else f"${mc/1_000_000:.1f}M"
-        data_summary += (
-            f"- {coin['name']} ({coin['symbol']}): {coin['rating']} (Score: {coin['score']})\n"
-            f"  Price: {price_str} | 1h: {coin['price_change_1h']:+.1f}%\n"
-            f"  Age: {coin['age_hours']:.1f}h | Liq: ${coin['liquidity']/1000:.0f}K | MC: {mc_str}\n"
-            f"  Vol/Liq: {coin['volume_liq_ratio']:.1f}x | Narrative: {', '.join(coin['narrative'])}\n"
-            f"  Signals: {'; '.join(coin['signals'][:3])}\n"
-            f"  Risks: {'; '.join(coin['risks'][:2])}\n"
-            f"  Links: DexScreener | GMGN\n\n"
+        message += f"\U0001F4B0 Price: {price_str} | 1h: {'+' if coin['price_change_1h'] > 0 else ''}{coin['price_change_1h']:.1f}%\n"
+        message += f"\u23F1\uFE0F Age: {coin['age_hours']:.1f}h | \U0001F4A7 Liq: ${coin['liquidity']/1000:.1f}K | \U0001F4B8 MC: {mc_str}\n"
+        message += f"\U0001F4C8 Vol/Liq Ratio: {coin['volume_liq_ratio']:.1f}x\n"
+        message += f"\U0001F3F7\uFE0F Narrative: {', '.join(coin['narrative'])}\n"
+
+        if coin['signals']:
+            message += f"\u2705 Signals: {'; '.join(coin['signals'][:3])}\n"
+        if coin['risks']:
+            message += f"\u26A0\uFE0F Risks: {'; '.join(coin['risks'][:2])}\n"
+        if coin.get('smart_wallet_note'):
+            message += f"\U0001F9E0 {coin['smart_wallet_note']}\n"
+
+        message += f"\U0001F517 [DexScreener]({coin['dex_screener_url']}) | [GMGN]({coin['gmgn_url']})\n\n"
+
+        from duckscreeener.db.database import store_signal
+        store_signal(
+            symbol=coin['symbol'],
+            entry_price=coin['price'],
+            source_type='memecoin',
+            signal_type=f"NEW ({coin['age_hours']:.1f}h)",
+            token_address=coin['address'],
+            market_cap=coin['market_cap'],
+            volume=coin['volume_1h'],
+            score=coin['score'],
+            narrative=', '.join(coin['narrative']),
+            analysis='; '.join(coin['signals'][:3]),
         )
 
-    # Get knowledge base context
-    recent = get_recent_knowledge(5)
-    kb_context = ""
-    if recent:
-        kb_context = "\nPengetahuan yang sudah dipelajari:\n"
-        for item in recent:
-            source_type = item['source'].split(':')[0]
-            kb_context += f"- [{source_type}] {item['text'][:200]}...\n"
-
-    # Let LLM synthesize with knowledge base context
-    if BOT_LANGUAGE == "id":
-        prompt = (
-            f"Kamu adalah crypto analyst yang baru scan memecoin baru di Solana.\n\n"
-            f"Berikut data yang kamu temukan:\n{data_summary}\n\n"
-            f"{kb_context}\n\n"
-            f"Sajikan secara natural:\n"
-            f"1. Overview market memecoin saat ini\n"
-            f"2. Highlight coin paling berpotensi dan kenapa\n"
-            f"3. Bahas narasi yang sedang trending\n"
-            f"4. Hubungkan dengan pengetahuan yang sudah dipelajari jika relevan\n"
-            f"5. Tambahkan warning/risiko dan DYOR di akhir\n\n"
-            f"Jawab seperti cerita ke teman, bukan tabel data."
-        )
-    else:
-        prompt = (
-            f"You are a crypto analyst who just scanned new Solana memecoins.\n\n"
-            f"Here's what you found:\n{data_summary}\n\n"
-            f"{kb_context}\n\n"
-            f"Present naturally:\n"
-            f"1. Overall memecoin market overview\n"
-            f"2. Highlight most promising coins and why\n"
-            f"3. Discuss trending narratives\n"
-            f"4. Connect with learned knowledge if relevant\n"
-            f"5. Include warnings/risks and DYOR at the end\n\n"
-            f"Answer like telling a friend, not a data table."
-        )
-
-    analysis = await _run_llm(prompt, "You are a conversational crypto analyst sharing memecoin findings with knowledge from past learnings.")
+    message += "\nDYOR! These are early signals, not financial advice."
 
     from duckscreeener.utils.message_split import send_long_message
-    await send_long_message(analysis, update)
+    await send_long_message(message, update, parse_mode="Markdown")
 
 
 async def memecoin_ai(update, context):
@@ -553,62 +546,44 @@ async def scan_coins(update, context):
         )
         return
 
-    # Build data summary for LLM
-    data_summary = ""
-    for gem in gems[:8]:
+    message = "WHALE ACCUMULATION DETECTION\n"
+    message += "High volume + flat price = accumulation before pump\n\n"
+
+    for gem in gems:
         price_str = f"${gem['price']:.6f}" if gem['price'] < 1 else f"${gem['price']:.2f}"
         change_24h = f"+{gem['change_24h']:.2f}%" if gem['change_24h'] > 0 else f"{gem['change_24h']:.2f}%"
         volume_str = f"${gem['volume']/1_000_000:.1f}M"
         vm_ratio = gem.get('vol_mcap_ratio', 0)
         ath_drop = gem.get('ath_drop', 0)
-        data_summary += (
-            f"- {gem['name']} ({gem['symbol']}): {gem['gem_type']}\n"
-            f"  Price: {price_str} | 24h: {change_24h} | Vol: {volume_str}\n"
-            f"  Vol/MC Ratio: {vm_ratio:.2f} | From ATH: -{ath_drop:.0f}%\n"
-            f"  Analysis: {gem.get('analysis', 'N/A')[:200]}\n"
-            f"  CoinGecko: https://www.coingecko.com/en/coins/{gem.get('coin_id', gem['symbol'].lower())}\n"
-            f"  CoinMarketCap: https://coinmarketcap.com/currencies/{gem.get('coin_id', gem['symbol'].lower())}\n\n"
-        )
 
-    # Get knowledge base context for informed analysis
-    recent = get_recent_knowledge(5)
-    kb_context = ""
-    if recent:
-        kb_context = "\nPengetahuan yang sudah dipelajari:\n"
-        for item in recent:
-            source_type = item['source'].split(':')[0]
-            kb_context += f"- [{source_type}] {item['text'][:200]}...\n"
+        gem_type = gem.get('gem_type', '')
+        if 'WHALE' in gem_type:
+            gem_emoji = "\U0001F40B"
+        elif 'SILENT' in gem_type:
+            gem_emoji = "\U0001F92B"
+        elif 'EARLY' in gem_type:
+            gem_emoji = "\u26A1"
+        elif 'DEEP' in gem_type:
+            gem_emoji = "\U0001F48E"
+        else:
+            gem_emoji = "\U0001F50D"
 
-    # Let LLM synthesize the findings with knowledge base context
-    if BOT_LANGUAGE == "id":
-        prompt = (
-            f"Kamu adalah crypto analyst yang baru selesai scanning CEX spot untuk deteksi akumulasi whale.\n\n"
-            f"Berikut data yang kamu temukan:\n{data_summary}\n\n"
-            f"{kb_context}\n\n"
-            f"Sajikan temuan ini dalam bahasa Indonesia yang natural:\n"
-            f"1. Ceritakan apa yang kamu temukan secara keseluruhan\n"
-            f"2. Highlight coin yang paling menarik dan kenapa\n"
-            f"3. Hubungkan dengan pengetahuan yang sudah dipelajari jika relevan\n"
-            f"4. Tambahkan disclaimer DYOR di akhir\n\n"
-            f"Jawab seperti cerita ke teman, bukan tabel data."
-        )
-    else:
-        prompt = (
-            f"You are a crypto analyst who just finished scanning CEX spot for whale accumulation.\n\n"
-            f"Here's what you found:\n{data_summary}\n\n"
-            f"{kb_context}\n\n"
-            f"Present naturally:\n"
-            f"1. Tell the overall story\n"
-            f"2. Highlight most interesting coins and why\n"
-            f"3. Connect with learned knowledge if relevant\n"
-            f"4. Add DYOR disclaimer at the end\n\n"
-            f"Answer like telling a friend, not a data table."
-        )
+        message += f"{gem_emoji} {gem_type}\n"
+        message += f"*{gem['name']} ({gem['symbol']})*\n"
+        message += f"\U0001F550 Scanned at: {get_first_scan_time(gem['symbol'], 'scan')}\n"
+        message += f"\U0001F4B0 Price: {price_str} | 24h: {change_24h}\n"
+        message += f"\U0001F4C8 Vol: {volume_str} | \U0001F4B8 MC: ${gem['market_cap']/1_000_000:.1f}M\n"
+        message += f"\U0001F4CA Vol/MC Ratio: {vm_ratio:.2f} (high = unusual activity)\n"
+        message += f"\U0001F4C9 From ATH: -{ath_drop:.0f}%\n"
+        if gem.get('analysis'):
+            message += f"\U0001F4DD Analisis: {gem['analysis'][:200]}\n"
+        coin_id = gem.get('coin_id', gem['symbol'].lower())
+        message += f"\U0001F517 [CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
 
-    analysis = await _run_llm(prompt, "You are a conversational crypto analyst sharing scanning findings with knowledge from past learnings.")
+    message += "\nDYOR! These are accumulation signals, not financial advice."
 
     from duckscreeener.utils.message_split import send_long_message
-    await send_long_message(analysis, update)
+    await send_long_message(message, update, parse_mode="Markdown")
 
 
 async def run_backtest_command(update, context):
