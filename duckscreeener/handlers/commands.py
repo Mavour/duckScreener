@@ -582,39 +582,67 @@ async def wallet_analyze(update, context):
         )
         return
 
-    msg = f"Wallet Analysis\n`{wallet[:32]}...`\n\n"
-    msg += f"Recent transactions: {activity['recent_txs']}\n"
+    if activity.get('error'):
+        await update.message.reply_text(
+            f"Wallet Analysis\n`{wallet[:32]}...`\n\n"
+            f"SOL Balance: {activity['sol_balance']:.4f} SOL\n\n"
+            f"No transactions found. This wallet might be new or inactive."
+        )
+        return
 
-    wallet_knowledge = search_knowledge(wallet[:20], limit=5)
+    msg = f"Wallet Analysis\n`{wallet[:32]}...`\n\n"
+
+    # Balance
+    msg += f"\U0001F4B0 SOL Balance: {activity['sol_balance']:.4f} SOL\n"
+    msg += f"\U0001F4C8 SOL In: {activity['total_sol_in']:.4f} | \U0001F4C9 SOL Out: {activity['total_sol_out']:.4f}\n\n"
+
+    # Wallet age
+    age_days = activity.get('wallet_age_days', 0)
+    if age_days > 0:
+        msg += f"\u23F1\uFE0F Wallet Age: {age_days:.0f} days\n"
+    msg += f"\U0001F4CA Recent Transactions: {activity['recent_txs']}\n"
+
+    last_activity = activity.get('last_activity', 0)
+    if last_activity:
+        from datetime import datetime
+        msg += f"\U0001F550 Last Activity: {datetime.fromtimestamp(last_activity).strftime('%Y-%m-%d %H:%M')}\n"
+
+    # Portfolio
+    portfolio = activity.get('portfolio', [])
+    if portfolio:
+        msg += f"\n\U0001F4BC Portfolio ({len(portfolio)} tokens):\n"
+        for token in portfolio[:10]:
+            symbol = token.get('symbol', '?')
+            name = token.get('name', '')
+            amount = token.get('amount', 0)
+            price = token.get('price', '0')
+            liq = token.get('liquidity', 0)
+
+            price_float = float(price) if price and price != '0' else 0
+            price_str = f"${price_float:.8f}" if price_float < 0.001 else f"${price_float:.4f}"
+            liq_str = f" | Liq: ${liq/1000:.0f}K" if liq > 0 else ""
+
+            msg += f"- {symbol} ({name}): {amount:.0f} @ {price_str}{liq_str}\n"
+
+    # Recent trades
+    trades = activity.get('trades', [])
+    if trades:
+        msg += f"\n\U0001F504 Recent Trades:\n"
+        for trade in trades[:10]:
+            direction = "\u2705" if trade['direction'] == 'BUY' else "\u274C"
+            time_str = datetime.fromtimestamp(trade['time']).strftime('%m/%d %H:%M') if trade.get('time') else '?'
+            msg += f"{direction} {trade['direction']} {trade['amount']:.0f} tokens ({time_str}) [{trade['tx_sig']}]\n"
+
+    # Wallet KB history
+    wallet_knowledge = search_knowledge(wallet[:20], limit=3)
     if wallet_knowledge:
-        msg += f"\nRiwayat dari Knowledge Base:\n"
+        msg += f"\n\U0001F4D6 KB History:\n"
         for kb in wallet_knowledge[:3]:
             text = kb['text'][:100]
             msg += f"- {text}...\n"
 
-    if activity.get('token_details'):
-        msg += "\nTokens Traded:\n"
-        for token in activity['token_details'][:5]:
-            symbol = token.get('symbol', '?')
-            price = token.get('price', '0')
-            liquidity = token.get('liquidity', 0)
-
-            if price and price != '0':
-                msg += f"- {symbol}: ${float(price):.6f}"
-                if liquidity:
-                    msg += f" (liq: ${liquidity/1000:.1f}K)"
-                msg += "\n"
-            else:
-                msg += f"- {symbol}\n"
-
-    msg += f"\nEst. Volume: ~{activity['total_volume']:.2f} SOL"
-
-    if activity.get('last_activity'):
-        from datetime import datetime
-        dt = datetime.fromtimestamp(activity['last_activity'])
-        msg += f"\nLast activity: {dt.strftime('%Y-%m-%d %H:%M')}"
-
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message(msg, update, parse_mode="Markdown")
 
 
 async def wallet_scan(update, context):

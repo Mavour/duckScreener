@@ -559,47 +559,108 @@ def get_wallet_transactions(wallet_address, limit=20):
 
 
 def analyze_wallet_activity(wallet_address):
+    """
+    Comprehensive wallet analysis:
+    - SOL balance
+    - Token portfolio (current holdings)
+    - Recent trade history (buy/sell with amounts)
+    - Wallet age (first tx)
+    - Activity summary
+    """
     try:
-        txs = get_wallet_transactions(wallet_address, limit=15)
+        # Get SOL balance
+        sol_balance = 0
+        try:
+            bal_resp = make_rpc_request("getBalance", [wallet_address])
+            if bal_resp and 'result' in bal_resp:
+                sol_balance = bal_resp['result'].get('value', 0) / 1e9
+        except Exception:
+            pass
 
+        # Get recent transactions
+        txs = get_wallet_transactions(wallet_address, limit=20)
         if not txs:
-            return None
+            return {
+                'wallet': wallet_address,
+                'sol_balance': sol_balance,
+                'error': 'No transactions found'
+            }
 
-        activity = {
-            'recent_txs': len(txs),
-            'last_activity': txs[0].get('blockTime'),
-            'tokens_traded': set(),
-            'total_volume': 0
-        }
+        # Parse trades from transactions
+        trades = []
+        token_holdings = {}
+        total_sol_in = 0
+        total_sol_out = 0
 
         for tx in txs:
             meta = tx.get('meta', {})
-            post_token_balances = meta.get('postTokenBalances', [])
-            pre_token_balances = meta.get('preTokenBalances', [])
+            pre_tb = meta.get('preTokenBalances', [])
+            post_tb = meta.get('postTokenBalances', [])
+            log_messages = meta.get('logMessages', [])
+            block_time = tx.get('blockTime', 0)
 
-            for bal in post_token_balances:
-                mint = bal.get('mint', '')
-                if mint and mint != 'So11111111111111111111111111111111111111112':
-                    activity['tokens_traded'].add(mint)
+            # Determine trade direction from token balance changes
+            for i in range(min(len(pre_tb), len(post_tb))):
+                pre_amt = float(pre_tb[i].get('uiTokenAmount', {}).get('uiAmountString', '0') or '0')
+                post_amt = float(post_tb[i].get('uiTokenAmount', {}).get('uiAmountString', '0') or '0')
+                diff = post_amt - pre_amt
+                mint = post_tb[i].get('mint', '')
 
-            try:
-                pre_sol = float(pre_token_balances[0].get('uiTokenAmount', {}).get('uiAmountString', '0')) if pre_token_balances else 0
-                post_sol = float(post_token_balances[0].get('uiTokenAmount', {}).get('uiAmountString', '0')) if post_token_balances else 0
-                activity['total_volume'] += abs(post_sol - pre_sol)
-            except:
-                pass
+                if mint == 'So11111111111111111111111111111111111111112':
+                    if diff < 0:
+                        total_sol_out += abs(diff)
+                    else:
+                        total_sol_in += diff
+                    continue
 
-        activity['tokens_traded'] = list(activity['tokens_traded'])
+                if abs(diff) > 0.001 and mint:
+                    direction = 'BUY' if diff > 0 else 'SELL'
+                    if mint not in token_holdings:
+                        token_holdings[mint] = {'amount': 0, 'last_seen': block_time}
+                    token_holdings[mint]['amount'] += diff
 
-        token_details = []
-        for mint in activity['tokens_traded'][:5]:
-            info = get_token_info(mint)
-            if info:
-                token_details.append(info)
+                    trades.append({
+                        'time': block_time,
+                        'direction': direction,
+                        'mint': mint,
+                        'amount': abs(diff),
+                        'tx_sig': tx['signature'][:10] + '...',
+                    })
 
-        activity['token_details'] = token_details
+        # Get token info for holdings
+        portfolio = []
+        for mint, data in token_holdings.items():
+            if data['amount'] > 0:
+                info = get_token_info(mint)
+                portfolio.append({
+                    'symbol': info.get('symbol', '?'),
+                    'name': info.get('name', '?'),
+                    'amount': data['amount'],
+                    'price': info.get('price', '0'),
+                    'liquidity': info.get('liquidity', 0),
+                    'mint': mint,
+                })
 
-        return activity
+        portfolio.sort(key=lambda x: x['amount'], reverse=True)
+
+        # Wallet age
+        first_tx_time = txs[-1].get('blockTime', 0) if txs else 0
+        wallet_age_days = 0
+        if first_tx_time:
+            wallet_age_days = (time.time() - first_tx_time) / 86400
+
+        return {
+            'wallet': wallet_address,
+            'sol_balance': sol_balance,
+            'total_sol_in': total_sol_in,
+            'total_sol_out': total_sol_out,
+            'recent_txs': len(txs),
+            'wallet_age_days': wallet_age_days,
+            'first_tx': first_tx_time,
+            'last_activity': txs[0].get('blockTime', 0),
+            'trades': trades[:15],
+            'portfolio': portfolio[:10],
+        }
 
     except Exception as e:
         logger.error(f"Wallet analysis error: {e}")
