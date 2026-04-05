@@ -174,29 +174,15 @@ def scan_potential_coins():
                 if related:
                     news_context = "\nRelated news:\n" + "\n".join(related[:3])
 
-            try:
-                price_str = f"${gem['price']:.6f}" if gem['price'] < 1 else f"${gem['price']:.2f}"
-                analysis_prompt = (
-                    f"Analyse {gem['name']} ({gem['symbol']}) for whale accumulation signals:\n"
-                    f"- Price: {price_str} | 24h: {gem['change_24h']:.1f}% | 1h: {gem['change_1h']:.1f}%\n"
-                    f"- Volume: ${gem['volume']/1_000_000:.1f}M | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
-                    f"- Vol/MC Ratio: {gem['vol_mcap_ratio']:.2f} (high = unusual activity)\n"
-                    f"- From ATH: -{gem['ath_drop']:.0f}%\n"
-                    f"- Signal: {gem['gem_type']}\n"
-                    f"{news_context}\n\n"
-                    f"Is this whale accumulation before a potential pump? "
-                    f"Give 2-3 sentences in Indonesian. Focus on whether volume is unusual for this price action."
-                )
-                gem['analysis'] = openrouter_chat(analysis_prompt, system="You are a crypto analyst detecting whale accumulation patterns on CEX.")
-                if "couldn't process" in gem['analysis'].lower() or "maaf" in gem['analysis'].lower():
-                    raise Exception("LLM failed")
-            except Exception:
-                if gem['vol_mcap_ratio'] > 0.3:
-                    gem['analysis'] = f"Volume sangat tinggi ({gem['vol_mcap_ratio']:.2f}x MC) tapi harga masih flat. Indikasi akumulasi."
-                elif gem['ath_drop'] > 70:
-                    gem['analysis'] = f"Turun {gem['ath_drop']:.0f}% dari ATH, volume mulai masuk. Potensi bottom formation."
-                else:
-                    gem['analysis'] = f"Volume/MC ratio {gem['vol_mcap_ratio']:.2f} — ada aktivitas tidak biasa."
+            # Skip LLM — use rule-based analysis instead (much faster)
+            if gem['vol_mcap_ratio'] > 0.3:
+                gem['analysis'] = f"Volume sangat tinggi ({gem['vol_mcap_ratio']:.2f}x MC) tapi harga masih flat. Indikasi akumulasi."
+            elif gem['ath_drop'] > 70:
+                gem['analysis'] = f"Turun {gem['ath_drop']:.0f}% dari ATH, volume mulai masuk. Potensi bottom formation."
+            elif gem['vol_mcap_ratio'] > 0.15:
+                gem['analysis'] = f"Volume/MC ratio {gem['vol_mcap_ratio']:.2f} — ada aktivitas tidak biasa."
+            else:
+                gem['analysis'] = f"Signal: {gem['gem_type']}. Cek lebih lanjut di CoinGecko/CoinMarketCap."
 
             from duckscreeener.db.database import store_signal
             store_signal(

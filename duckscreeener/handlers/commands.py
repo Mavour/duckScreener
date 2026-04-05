@@ -3,6 +3,7 @@ import os
 import tempfile
 import re
 import asyncio
+import time
 from duckscreeener.config.settings import (
     BOT_LANGUAGE, TELEGRAM_TOKEN, OPENROUTER_API_KEY, SOLANA_SMART_WALLETS,
 )
@@ -31,6 +32,18 @@ async def _run_llm(prompt, system="You are a helpful assistant."):
     return await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system=system))
 
 logger = logging.getLogger(__name__)
+
+_user_cooldowns = {}
+COMMAND_COOLDOWN = 30
+
+def check_cooldown(user_id, command):
+    key = f"{user_id}:{command}"
+    now = time.time()
+    if key in _user_cooldowns and now - _user_cooldowns[key] < COMMAND_COOLDOWN:
+        remaining = COMMAND_COOLDOWN - (now - _user_cooldowns[key])
+        return f"Please wait {remaining:.0f}s before using this command again."
+    _user_cooldowns[key] = now
+    return None
 
 USER_ADDED_WALLETS = load_list_setting("user_added_wallets", [])
 TRUSTED_TWITTER_ACCOUNTS = load_list_setting("trusted_twitter_accounts", [])
@@ -262,10 +275,16 @@ async def summary(update, context):
 
 
 async def memecoin(update, context):
+    user_id = update.effective_user.id
+    cooldown_msg = check_cooldown(user_id, "memecoin")
+    if cooldown_msg:
+        await update.message.reply_text(cooldown_msg)
+        return
     await update.message.reply_chat_action(action="typing")
     await update.message.reply_text("Scanning for NEW memecoins with hype potential...")
 
-    new_coins = scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5)
+    loop = asyncio.get_event_loop()
+    new_coins = await loop.run_in_executor(None, lambda: scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5))
 
     if not new_coins:
         await update.message.reply_text(
@@ -648,6 +667,12 @@ async def wallet_scan(update, context):
 
 
 async def scan_coins(update, context):
+    user_id = update.effective_user.id
+    cooldown_msg = check_cooldown(user_id, "scan")
+    if cooldown_msg:
+        await update.message.reply_text(cooldown_msg)
+        return
+
     await update.message.reply_chat_action(action="typing")
     status_msg = await update.message.reply_text("Scanning CEX spot for whale accumulation signals...")
 
