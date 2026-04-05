@@ -16,7 +16,7 @@ from duckscreeener.config.settings import (
 )
 from duckscreeener.db.database import init_db
 from duckscreeener.handlers.commands import (
-    start, summary, memecoin, memecoin_ai, learn, create_agent,
+    start, summary, memecoin, memecoin_ai,
     set_lang,
     wallet_list, wallet_add, wallet_remove, wallet_analyze, wallet_scan,
     memory, health, scan_coins,
@@ -173,8 +173,9 @@ def run_gmgn_scanner():
 def main():
     log_activity("BOT_START", "Starting Crypto Agent Bot (Modular)")
     init_db()
-    from duckscreeener.db.database import cleanup_old_scan_data
+    from duckscreeener.db.database import cleanup_old_scan_data, cleanup_old_signals
     cleanup_old_scan_data()
+    cleanup_old_signals(max_days=30)
 
     if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         logger.error("Please set TELEGRAM_TOKEN in .env")
@@ -202,7 +203,6 @@ def main():
             BotCommand("wallet_list", "List Wallet"),
             BotCommand("wallet_add", "Tambah Wallet"),
             BotCommand("wallet_remove", "Hapus Wallet"),
-            BotCommand("learn", "Learn PDF/Link"),
             BotCommand("memory", "Knowledge Base"),
             BotCommand("backtest", "Cek Performa"),
             BotCommand("health", "Status Bot"),
@@ -235,8 +235,6 @@ def main():
     app.add_handler(CommandHandler("memory", memory))
     app.add_handler(CommandHandler("health", health))
     app.add_handler(CommandHandler("set_lang", set_lang))
-    app.add_handler(CommandHandler("learn", learn))
-    app.add_handler(CommandHandler("create_agent", create_agent))
     app.add_handler(CommandHandler("backtest", run_backtest_command))
     app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO | filters.TEXT & (~filters.COMMAND), handle_message))
 

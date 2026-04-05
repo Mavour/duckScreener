@@ -203,6 +203,24 @@ def cleanup_old_scan_data():
     return total_deleted
 
 
+def cleanup_old_signals(max_days=30):
+    """Delete signals and outcomes older than max_days"""
+    import time
+    db = get_db()
+    cutoff = time.time() - (max_days * 86400)
+    # Delete outcomes first
+    db.execute(
+        "DELETE FROM signal_outcomes WHERE signal_id IN (SELECT id FROM scan_signals WHERE timestamp < ?)",
+        (cutoff,)
+    )
+    cursor = db.execute("DELETE FROM scan_signals WHERE timestamp < ?", (cutoff,))
+    db.commit()
+    deleted = cursor.rowcount
+    if deleted > 0:
+        logger.info(f"Cleaned up {deleted} signals older than {max_days} days")
+    return deleted
+
+
 def get_all_knowledge_by_source_prefix(prefix):
     db = get_db()
     rows = db.execute(

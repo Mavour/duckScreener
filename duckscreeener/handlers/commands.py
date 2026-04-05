@@ -34,14 +34,25 @@ async def _run_llm(prompt, system="You are a helpful assistant."):
 logger = logging.getLogger(__name__)
 
 _user_cooldowns = {}
-COMMAND_COOLDOWN = 30
+_COMMAND_COOLDOWN = 30
+_LLM_COOLDOWN = 15
 
 def check_cooldown(user_id, command):
     key = f"{user_id}:{command}"
     now = time.time()
-    if key in _user_cooldowns and now - _user_cooldowns[key] < COMMAND_COOLDOWN:
-        remaining = COMMAND_COOLDOWN - (now - _user_cooldowns[key])
+    if key in _user_cooldowns and now - _user_cooldowns[key] < _COMMAND_COOLDOWN:
+        remaining = _COMMAND_COOLDOWN - (now - _user_cooldowns[key])
         return f"Please wait {remaining:.0f}s before using this command again."
+    _user_cooldowns[key] = now
+    return None
+
+def check_llm_cooldown(user_id):
+    """Rate limit for commands that use LLM calls"""
+    key = f"{user_id}:llm"
+    now = time.time()
+    if key in _user_cooldowns and now - _user_cooldowns[key] < _LLM_COOLDOWN:
+        remaining = _LLM_COOLDOWN - (now - _user_cooldowns[key])
+        return f"Tunggu {remaining:.0f}s sebelum command berikutnya ya, saya lagi mikir."
     _user_cooldowns[key] = now
     return None
 
@@ -218,6 +229,11 @@ async def start(update, context):
 
 
 async def summary(update, context):
+    user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
     await update.message.reply_chat_action(action="typing")
     status_msg = await update.message.reply_text("\u23F3 Fetching latest crypto news...")
     from duckscreeener.services.external_apis import fetch_latest_news_with_items
@@ -326,6 +342,11 @@ async def memecoin(update, context):
 
 async def memecoin_ai(update, context):
     user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
+    user_id = update.effective_user.id
     cooldown_msg = check_cooldown(user_id, "memecoin_ai")
     if cooldown_msg:
         await update.message.reply_text(cooldown_msg)
@@ -371,52 +392,12 @@ async def memecoin_ai(update, context):
     await send_long_message(analysis, update)
 
 
-async def learn(update, context):
-    await update.message.reply_chat_action(action="typing")
-    await update.message.reply_text(
-        "\U0001F4D6 Send me a PDF or an image, and I will extract text, summarize, and learn."
-    )
-
-
-async def create_agent(update, context):
-    await update.message.reply_chat_action(action="typing")
-    args = context.args
-    if not args:
-        if BOT_LANGUAGE == "id":
-            await update.message.reply_text(
-                "Cara pakai: /create_agent <nama_agent> [deskripsi_singkat].\n"
-                "Contoh: /create_agent duck_screener Spot undervalued memecoins dengan risk control."
-            )
-        else:
-            await update.message.reply_text(
-                "Usage: /create_agent <agent_name> [brief purpose].\n"
-                "Example: /create_agent duck_screener Spot undervalued memecoins with risk control."
-            )
-        return
-
-    agent_name = args[0]
-    purpose = " ".join(args[1:]) if len(args) > 1 else "crypto screening and market insight"
-
-    if BOT_LANGUAGE == "id":
-        prompt = (
-            f"Buat profil agen yang concise dan practical untuk bot Telegram bernama '{agent_name}'. "
-            f"Agen harus specialize dalam {purpose}. "
-            "Deskripsikan: 1) mission, 2) primary tasks, 3) persona tone, 4) fail-safe safety reminder. "
-            "Respond entirely in Indonesian. Return results dalam short bullet points."
-        )
-    else:
-        prompt = (
-            f"Create a concise and practical agent profile for a Telegram bot called '{agent_name}'. "
-            f"The agent should specialize in {purpose}. "
-            "Describe: 1) mission, 2) primary tasks, 3) persona tone, 4) fail-safe safety reminder. "
-            "Return results in short bullet points."
-        )
-
-    agent_profile = openrouter_chat(prompt, system=system_prompt("agent_architect"))
-    await update.message.reply_text(f"Agent profile for '{agent_name}':\n{agent_profile}")
-
-
 async def memory(update, context):
+    user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
     await update.message.reply_chat_action(action="typing")
     status_msg = await update.message.reply_text("\U0001F9E0 Memproses pengetahuan yang sudah dipelajari...")
     total = count_knowledge()
@@ -538,9 +519,50 @@ async def wallet_list(update, context):
             msg += "\nUser added:\n"
             for w in USER_ADDED_WALLETS:
                 msg += f"- `{w[:20]}...`\n"
+        msg += "\nUse /wallet_scan to check their activity"
         await update.message.reply_text(msg, parse_mode="Markdown")
     else:
         await update.message.reply_text("Belum ada smart wallets. Tambahkan via /wallet_add")
+
+
+async def wallet_scan(update, context):
+    await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text("\U0001F50D Scanning all tracked wallets...")
+
+    all_wallets = SOLANA_SMART_WALLETS + USER_ADDED_WALLETS
+
+    if not all_wallets:
+        await status_msg.edit_text("Tidak ada wallets untuk discan. Tambahkan via /wallet_add")
+        return
+
+    results = []
+    for wallet in all_wallets[:5]:
+        activity = analyze_wallet_activity(wallet)
+        if activity and activity.get('portfolio'):
+            for token in activity['portfolio']:
+                results.append({
+                    'wallet': wallet[:20],
+                    'symbol': token.get('symbol', '?'),
+                    'amount': token.get('amount', 0),
+                    'price': token.get('price', '0')
+                })
+
+    if not results:
+        await status_msg.edit_text(
+            "Tidak ada token activity terdeteksi.\n"
+            "Mungkin wallets sedang tidak trading atau hanya hold posisi."
+        )
+        return
+
+    msg = "Wallet Scanner Results\n\n"
+    for r in results[:10]:
+        price = float(r['price']) if r['price'] != '0' else 0
+        price_str = f"${price:.6f}" if price < 0.01 else f"${price:.4f}"
+        msg += f"- {r['symbol']}: {price_str} ({r['amount']:.0f} tokens) by {r['wallet']}...\n"
+
+    msg += "\nUse /wallet_analyze <address> for detailed analysis"
+
+    await status_msg.edit_text(msg, parse_mode="Markdown")
 
 
 async def wallet_add(update, context):
@@ -710,6 +732,11 @@ async def wallet_scan(update, context):
 
 async def scan_coins(update, context):
     user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
+    user_id = update.effective_user.id
     cooldown_msg = check_cooldown(user_id, "scan")
     if cooldown_msg:
         await update.message.reply_text(cooldown_msg)
@@ -775,6 +802,11 @@ async def scan_coins(update, context):
 
 
 async def run_backtest_command(update, context):
+    user_id = update.effective_user.id
+    llm_cooldown = check_llm_cooldown(user_id)
+    if llm_cooldown:
+        await update.message.reply_text(llm_cooldown)
+        return
     await update.message.reply_chat_action(action="typing")
     status_msg = await update.message.reply_text("\U0001F4CA Running backtest analysis...")
 
