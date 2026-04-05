@@ -116,12 +116,28 @@ def store_knowledge(source, text):
     knowledge_id = cursor.lastrowid
     logger.info(f"Knowledge stored from {source} ({len(text)} chars) id={knowledge_id}")
 
-    # Auto-generate embedding in background
+    # Auto-generate embedding in background thread (non-blocking)
+    if len(text) > 50:
+        try:
+            import threading
+            t = threading.Thread(
+                target=_generate_embedding_async,
+                args=(knowledge_id, text),
+                daemon=True,
+            )
+            t.start()
+        except Exception:
+            pass
+
+
+def _generate_embedding_async(knowledge_id, text):
+    import time as time_module
+    time_module.sleep(2)
     try:
         from duckscreeener.db.vector_search import store_embedding
         store_embedding(knowledge_id, text)
-    except Exception as e:
-        logger.debug(f"Embedding generation skipped: {e}")
+    except Exception:
+        pass
 
 
 def search_knowledge(query, limit=5):

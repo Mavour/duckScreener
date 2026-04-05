@@ -1,7 +1,7 @@
 import logging
 import math
 import json
-import sqlite3
+import time
 import requests
 from duckscreeener.config.settings import OPENROUTER_API_KEY
 from duckscreeener.db.database import get_db
@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "nomic-ai/nomic-embed-text-v1.5:free"
 EMBEDDING_DIM = 768
+_last_embedding_time = 0
+_embedding_cooldown = 10
 
 
 def generate_embedding(text):
@@ -57,6 +59,13 @@ def cosine_similarity(a, b):
 
 def store_embedding(knowledge_id, text):
     """Generate and store embedding for a knowledge entry"""
+    global _last_embedding_time
+
+    now = time.time()
+    if now - _last_embedding_time < _embedding_cooldown:
+        logger.debug(f"Embedding rate-limited, skipping {knowledge_id}")
+        return
+
     db = get_db()
     db.execute(
         """
@@ -78,6 +87,7 @@ def store_embedding(knowledge_id, text):
 
     embedding = generate_embedding(text)
     if embedding:
+        _last_embedding_time = time.time()
         db.execute(
             "INSERT INTO knowledge_embeddings (knowledge_id, embedding) VALUES (?, ?)",
             (knowledge_id, _serialize_embedding(embedding)),

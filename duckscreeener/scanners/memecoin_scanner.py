@@ -125,7 +125,7 @@ def detect_narrative(name, symbol, description=""):
     if detected:
         return detected
 
-    # Fallback: AI detect untuk coin yang tidak match keyword
+    # Fallback: AI detect (only if not rate-limited)
     try:
         ai_prompt = (
             f"Classify this memecoin into ONE narrative category. "
@@ -134,11 +134,13 @@ def detect_narrative(name, symbol, description=""):
             f"Return ONLY the category name, nothing else.\n\n"
             f"Name: {name}\nSymbol: {symbol}"
         )
-        result = openrouter_chat(ai_prompt, system="You are a crypto narrative classifier. Return only the category name.")
+        result = openrouter_chat(ai_prompt, system="You are a crypto narrative classifier.")
+        if "429" in result or "Too Many" in result:
+            return ["Random/Abstract"]
         result = result.strip().strip('"').strip("'")
         if result and len(result) < 50:
             return [result]
-    except:
+    except Exception:
         pass
 
     return ["Random/Abstract"]
