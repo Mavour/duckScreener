@@ -161,13 +161,23 @@ def run_backtest(chat_id=None):
             if symbol not in symbol_signals:
                 entry_price = extract_entry_price_from_text(record['text'])
                 if entry_price:
+                    # Extract signal type from text
+                    text = record.get('text', '')
+                    sig_type = 'scan'
+                    if 'GEM SCAN' in text or 'WHALE' in text:
+                        sig_type = 'WHALE ACCUMULATION'
+                    elif 'MEMECOIN' in text or 'NEW' in text:
+                        sig_type = 'NEW MEMECOIN'
+                    elif 'GMGN' in text:
+                        sig_type = 'GMGN SCAN'
+
                     symbol_signals[symbol] = {
                         'id': record['id'],
                         'symbol': symbol,
                         'token_address': None,
                         'source_type': source.split(':')[0],
                         'entry_price': entry_price,
-                        'signal_type': 'legacy',
+                        'signal_type': sig_type,
                         'market_cap': None,
                         'volume': None,
                         'score': None,
@@ -231,7 +241,7 @@ def run_backtest(chat_id=None):
                 report_by_source[source] = []
 
             report_by_source[source].append(
-                f"{status_emoji} *{symbol}* ({ts}) [{sig_type}]\n"
+                f"{status_emoji} *{symbol}* — Scanned at {ts} [{sig_type}]\n"
                 f"Entry: {entry_str} -> Current: {current_str}\n"
                 f"Change: {'+' if change_pct > 0 else ''}{change_pct:.1f}% - {status}"
             )
