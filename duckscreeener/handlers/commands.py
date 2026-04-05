@@ -62,31 +62,24 @@ def translate(key):
         "start_both": {
             "en": """Welcome to Crypto Agent Bot!
 
-I'm your AI-powered crypto trading assistant. Here's what I can do:
+I'm your AI-powered crypto assistant. Here's what I can do:
 
 NEWS & ANALYSIS
 /summary - Get daily crypto news summary
-/sentiment - Analyze market sentiment for a coin
 
 COIN SCREENING
-/screen - Find undervalued coins (whale accumulation, fundamentals)
-/scan - Scan for potential gems
+/scan - Detect whale accumulation on CEX (auto every 6h + manual)
 
-MEMECOIN & SOLANA
-/memecoin - Find trending memecoins
-/solana - Scan Solana smart wallet activity
-/gmgn - GMGN/DexScreener memecoin scanner
+MEMECOIN SCANNER
+/memecoin - Find new memecoins before they pump
+/memecoin_ai - Scan + AI analysis
+
+WALLET TRACKER
 /wallet_analyze <addr> - Analyze specific wallet
 /wallet_scan - Scan all tracked wallets
 /wallet_list - List tracked wallets
 /wallet_add <addr> - Add wallet to track
 /wallet_remove <addr> - Remove wallet
-
-TWITTER/X
-/tweets <keyword> - Fetch tweets (use --trusted for verified accounts)
-/trust_list - View trusted accounts
-/trust_add @user - Add trusted account
-/trust_remove @user - Remove trusted account
 
 KNOWLEDGE & TOOLS
 /learn - Learn from PDF/image/link
@@ -94,42 +87,34 @@ KNOWLEDGE & TOOLS
 /search <query> - Search knowledge base
 /create_agent - Create custom AI agent
 
-BACKTEST & ALERTS
+BACKTEST
 /backtest - Check signal performance
-/health - Bot health status
 
 SETTINGS
+/health - Bot health status
 /set_lang <en|id> - Change language
-/help - Show this help message
 
-Just type any command to get started!""",
+Just type naturally! I understand what you mean.""",
             "id": """Selamat Datang di Crypto Agent Bot!
 
-Saya adalah asisten trading crypto AI Anda. Ini yang bisa saya lakukan:
+Saya adalah asisten crypto AI Anda. Ini yang bisa saya lakukan:
 
 BERITA & ANALISIS
 /summary - Ringkasan berita crypto harian
-/sentiment - Analisis sentiment market untuk coin
 
 SCREENING COIN
-/screen - Cari coin yang undervalued
-/scan - Scan potential gems
+/scan - Deteksi akumulasi whale di CEX (auto 6 jam + manual)
 
-MEMECOIN & SOLANA
-/memecoin - Cari trending memecoins
-/solana - Scan smart wallet activity di Solana
-/gmgn - Scanner memecoin via GMGN/DexScreener
+MEMECOIN SCANNER
+/memecoin - Cari memecoin baru sebelum pump
+/memecoin_ai - Scan + analisis AI
+
+WALLET TRACKER
 /wallet_analyze <alamat> - Analisa wallet tertentu
 /wallet_scan - Scan semua wallet tracker
 /wallet_list - Lihat list wallet
 /wallet_add <alamat> - Tambah wallet
 /wallet_remove <alamat> - Hapus wallet
-
-TWITTER/X
-/tweets <keyword> - Ambil tweets (--trusted untuk akun terverifikasi)
-/trust_list - Lihat trusted accounts
-/trust_add @user - Tambah trusted account
-/trust_remove @user - Hapus trusted account
 
 KNOWLEDGE & TOOLS
 /learn - Belajar dari PDF/gambar/link
@@ -137,15 +122,14 @@ KNOWLEDGE & TOOLS
 /search <query> - Cari di knowledge base
 /create_agent - Buat AI agent kustom
 
-BACKTEST & ALERTS
+BACKTEST
 /backtest - Cek performa sinyal
-/health - Status kesehatan bot
 
 SETTINGS
+/health - Status bot
 /set_lang <en|id> - Ganti bahasa
-/help - Tampilkan pesan ini
 
-Cukup ketik command untuk memulai!"""
+Tulis saja secara natural! Saya paham maksud Anda.""",
         },
         "learn_prompt": {
             "en": "Send me a PDF or an image, and I will extract text, summarize, and learn.",
