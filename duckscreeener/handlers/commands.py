@@ -816,7 +816,6 @@ async def handle_message(update, context):
             else:
                 await msg.reply_text("Only PDF documents are supported currently.")
                 return
-            store_knowledge(f"pdf:{file_name}", text)
             if text:
                 if BOT_LANGUAGE == "id":
                     agent_prompt = (
@@ -829,6 +828,7 @@ async def handle_message(update, context):
                         "with actionable insight and a risk warning.\n\n" + text[:6000]
                     )
                 summary = openrouter_chat(agent_prompt, system="You are a crypto knowledge curator.")
+                store_knowledge(f"pdf:{file_name}", summary)
                 await msg.reply_text(f"Extracted {len(text)} characters from {file_name}.\nSummary:\n{summary}")
             else:
                 await msg.reply_text("PDF extracted no text.")
@@ -847,7 +847,6 @@ async def handle_message(update, context):
         await file.download_to_drive(temp_file.name)
         try:
             text = extract_text_from_image(temp_file.name)
-            store_knowledge("image", text)
             if text:
                 if BOT_LANGUAGE == "id":
                     agent_prompt = (
@@ -860,6 +859,7 @@ async def handle_message(update, context):
                         "and give one actionable suggestion.\n\n" + text[:6000]
                     )
                 summary = openrouter_chat(agent_prompt, system="You are a crypto knowledge curator.")
+                store_knowledge("image", summary)
                 await msg.reply_text(f"OCR extracted {len(text)} chars.\nSummary:\n{summary}")
             else:
                 await msg.reply_text("No text found in image.")
@@ -888,7 +888,7 @@ async def handle_message(update, context):
                     await msg.reply_text(video_info)
                     return
 
-                store_knowledge(f"youtube:{text}", video_info)
+                store_knowledge(f"youtube:{text}", summary)
 
                 if BOT_LANGUAGE == "id":
                     agent_prompt = (
@@ -927,8 +927,6 @@ async def handle_message(update, context):
                     else:
                         tweet_content = f"Link: {text}\n\nSilakan share isi tweet nya langsung untuk analisa."
 
-                store_knowledge(f"twitter:{text}", tweet_content)
-
                 if "saya tidak dapat" in tweet_content.lower() or "silakan" in tweet_content.lower() or "cannot" in tweet_content.lower():
                     await msg.reply_text(tweet_content, parse_mode="Markdown")
                     return
@@ -956,6 +954,7 @@ async def handle_message(update, context):
                     )
 
                 analysis = openrouter_chat(agent_prompt, system="You are a crypto analyst expert.")
+                store_knowledge(f"twitter:{text}", analysis)
 
                 max_msg_len = 4000
                 if len(analysis) > max_msg_len:
@@ -1024,8 +1023,6 @@ async def handle_message(update, context):
         loop = asyncio.get_event_loop()
         ans = await loop.run_in_executor(None, lambda: openrouter_chat(prompt, system=system_msg))
         await msg.reply_text(ans)
-
-        store_knowledge("user:question", text)
 
 
 async def _handle_intent(update, context, intent, params):

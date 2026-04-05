@@ -190,16 +190,16 @@ def get_recent_knowledge(limit=3):
 
 
 def cleanup_old_scan_data():
-    """Remove scan results from knowledge table (they're in scan_signals now)"""
+    """Remove scan results and chat logs from knowledge table"""
     db = get_db()
-    prefixes = ['scan:', 'memecoin:', 'gmgn:', 'solana:']
+    prefixes = ['scan:', 'memecoin:', 'gmgn:', 'solana:', 'user:']
     total_deleted = 0
     for prefix in prefixes:
         cursor = db.execute("DELETE FROM knowledge WHERE source LIKE ?", (f"{prefix}%",))
         total_deleted += cursor.rowcount
     db.commit()
     if total_deleted > 0:
-        logger.info(f"Cleaned up {total_deleted} old scan entries from knowledge table")
+        logger.info(f"Cleaned up {total_deleted} old entries from knowledge table")
     return total_deleted
 
 
