@@ -219,11 +219,12 @@ async def start(update, context):
 
 async def summary(update, context):
     await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text("\u23F3 Fetching latest crypto news...")
     from duckscreeener.services.external_apis import fetch_latest_news_with_items
 
     news_items = fetch_latest_news_with_items(limit=10)
     if not news_items:
-        await update.message.reply_text("No recent crypto news found.")
+        await status_msg.edit_text("No recent crypto news found.")
         return
 
     news_text = "\n".join([
@@ -265,13 +266,13 @@ async def memecoin(update, context):
         await update.message.reply_text(cooldown_msg)
         return
     await update.message.reply_chat_action(action="typing")
-    await update.message.reply_text("Scanning for NEW memecoins with hype potential...")
+    status_msg = await update.message.reply_text("\u23F3 Scanning for new memecoins...")
 
     loop = asyncio.get_event_loop()
     new_coins = await loop.run_in_executor(None, lambda: scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5))
 
     if not new_coins:
-        await update.message.reply_text(
+        await status_msg.edit_text(
             "No promising new memecoins found in the last 12 hours.\n"
             "Market might be quiet. Try again later."
         )
@@ -319,18 +320,24 @@ async def memecoin(update, context):
 
     message += "\nDYOR! These are early signals, not financial advice."
 
-    await update.message.reply_text(message, parse_mode="Markdown")
+    from duckscreeener.utils.message_split import send_long_message
+    await send_long_message(message, update, parse_mode="Markdown")
 
 
 async def memecoin_ai(update, context):
+    user_id = update.effective_user.id
+    cooldown_msg = check_cooldown(user_id, "memecoin_ai")
+    if cooldown_msg:
+        await update.message.reply_text(cooldown_msg)
+        return
     await update.message.reply_chat_action(action="typing")
-    await update.message.reply_text("Scanning and analyzing new memecoins with AI...")
+    status_msg = await update.message.reply_text("\u23F3 Scanning and analyzing memecoins with AI...")
 
     loop = asyncio.get_event_loop()
     new_coins = await loop.run_in_executor(None, lambda: scan_new_memecoins(hours=12, min_liquidity=5000, max_liquidity=1500000, limit=5))
 
     if not new_coins:
-        await update.message.reply_text(
+        await status_msg.edit_text(
             "No promising new memecoins found in the last 12 hours."
         )
         return
@@ -366,7 +373,9 @@ async def memecoin_ai(update, context):
 
 async def learn(update, context):
     await update.message.reply_chat_action(action="typing")
-    await update.message.reply_text(translate("learn_prompt"))
+    await update.message.reply_text(
+        "\U0001F4D6 Send me a PDF or an image, and I will extract text, summarize, and learn."
+    )
 
 
 async def create_agent(update, context):
@@ -409,9 +418,10 @@ async def create_agent(update, context):
 
 async def memory(update, context):
     await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text("\U0001F9E0 Loading knowledge base...")
     total = count_knowledge()
     if total == 0:
-        await update.message.reply_text("\U0001F9E0 Knowledge base is empty.")
+        await status_msg.edit_text("\U0001F9E0 Knowledge base is empty.")
         return
 
     try:
@@ -449,6 +459,7 @@ async def memory(update, context):
 
 async def health(update, context):
     await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text("\U0001F50D Running health check...")
     import time
     from duckscreeener.db.database import get_signal_stats, count_knowledge, get_db
 
@@ -490,12 +501,13 @@ async def search(update, context):
         await update.message.reply_text(translate("search_usage"))
         return
     query = " ".join(context.args)
+    status_msg = await update.message.reply_text(f"\U0001F50D Searching for '{query}'...")
 
     from duckscreeener.db.vector_search import search_semantic
     results = search_semantic(query, limit=5)
 
     if not results:
-        await update.message.reply_text(translate("search_no_results"))
+        await status_msg.edit_text(translate("search_no_results"))
         return
 
     lines = [translate("search_results").format(query=query)]
@@ -590,12 +602,12 @@ async def wallet_analyze(update, context):
         return
 
     wallet = context.args[0].strip()
-    await update.message.reply_text(f"Analyzing wallet...\n`{wallet}`", parse_mode="Markdown")
+    status_msg = await update.message.reply_text(f"\U0001F50D Analyzing wallet...\n`{wallet}`", parse_mode="Markdown")
 
     activity = analyze_wallet_activity(wallet)
 
     if not activity:
-        await update.message.reply_text(
+        await status_msg.edit_text(
             "Tidak dapat mengambil data transaksi.\n"
             "Kemungkinan:\n"
             "- RPC node sedang masalah\n"
@@ -604,7 +616,7 @@ async def wallet_analyze(update, context):
         return
 
     if activity.get('error'):
-        await update.message.reply_text(
+        await status_msg.edit_text(
             f"Wallet Analysis\n`{wallet[:32]}...`\n\n"
             f"SOL Balance: {activity['sol_balance']:.4f} SOL\n\n"
             f"No transactions found. This wallet might be new or inactive."
@@ -668,6 +680,7 @@ async def wallet_analyze(update, context):
 
 async def wallet_scan(update, context):
     await update.message.reply_chat_action(action="typing")
+    status_msg = await update.message.reply_text("\U0001F50D Scanning all tracked wallets...")
 
     all_wallets = SOLANA_SMART_WALLETS + USER_ADDED_WALLETS
 
@@ -774,7 +787,7 @@ async def scan_coins(update, context):
 
 async def run_backtest_command(update, context):
     await update.message.reply_chat_action(action="typing")
-    await update.message.reply_text("Running backtest analysis...")
+    status_msg = await update.message.reply_text("\U0001F4CA Running backtest analysis...")
 
     try:
         report = run_backtest()
