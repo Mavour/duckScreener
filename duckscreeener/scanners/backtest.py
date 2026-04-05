@@ -48,27 +48,30 @@ def get_current_prices(symbols, token_addresses=None):
             except Exception:
                 continue
 
-    # CoinGecko for top 250 coins (CEX coins)
-    try:
-        url = f"{COINGECKO_API_URL}/coins/markets"
-        params = {
-            'vs_currency': 'usd',
-            'order': 'market_cap_desc',
-            'per_page': 250,
-            'page': 1,
-            'sparkline': 'false',
-        }
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        for coin in resp.json():
-            sym = coin.get('symbol', '').upper()
-            if sym and sym not in price_map:
-                price_map[sym] = {
-                    'price': coin.get('current_price', 0),
-                    'source': 'coingecko',
-                }
-    except Exception as e:
-        logger.warning(f"CoinGecko price fetch failed: {e}")
+    # CoinGecko for top 1000 coins (CEX coins) - paginate 4 pages of 250
+    for page in range(1, 5):
+        try:
+            url = f"{COINGECKO_API_URL}/coins/markets"
+            params = {
+                'vs_currency': 'usd',
+                'order': 'market_cap_desc',
+                'per_page': 250,
+                'page': page,
+                'sparkline': 'false',
+            }
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            for coin in resp.json():
+                sym = coin.get('symbol', '').upper()
+                if sym and sym not in price_map:
+                    price_map[sym] = {
+                        'price': coin.get('current_price', 0),
+                        'source': 'coingecko',
+                    }
+            time.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"CoinGecko page {page} fetch failed: {e}")
+            break
 
     # DexScreener search fallback for symbols without address
     missing = [s for s in symbols if s not in price_map]
