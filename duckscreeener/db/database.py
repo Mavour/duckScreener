@@ -174,11 +174,33 @@ def count_knowledge():
 
 
 def get_recent_knowledge(limit=3):
+    """Get recent knowledge entries, excluding scan signals"""
     db = get_db()
     rows = db.execute(
-        "SELECT source, text, timestamp FROM knowledge ORDER BY id DESC LIMIT ?", (limit,)
+        """
+        SELECT source, text, timestamp FROM knowledge
+        WHERE source NOT LIKE 'scan:%'
+          AND source NOT LIKE 'memecoin:%'
+          AND source NOT LIKE 'gmgn:%'
+          AND source NOT LIKE 'solana:%'
+        ORDER BY id DESC LIMIT ?
+        """, (limit,)
     ).fetchall()
     return [{'source': r[0], 'text': r[1], 'timestamp': r[2]} for r in rows]
+
+
+def cleanup_old_scan_data():
+    """Remove scan results from knowledge table (they're in scan_signals now)"""
+    db = get_db()
+    prefixes = ['scan:', 'memecoin:', 'gmgn:', 'solana:']
+    total_deleted = 0
+    for prefix in prefixes:
+        cursor = db.execute("DELETE FROM knowledge WHERE source LIKE ?", (f"{prefix}%",))
+        total_deleted += cursor.rowcount
+    db.commit()
+    if total_deleted > 0:
+        logger.info(f"Cleaned up {total_deleted} old scan entries from knowledge table")
+    return total_deleted
 
 
 def get_all_knowledge_by_source_prefix(prefix):

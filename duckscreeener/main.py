@@ -173,6 +173,8 @@ def run_gmgn_scanner():
 def main():
     log_activity("BOT_START", "Starting Crypto Agent Bot (Modular)")
     init_db()
+    from duckscreeener.db.database import cleanup_old_scan_data
+    cleanup_old_scan_data()
 
     if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         logger.error("Please set TELEGRAM_TOKEN in .env")
