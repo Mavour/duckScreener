@@ -88,9 +88,9 @@ def run_coin_scanner():
                     message += f"Vol: {volume_str} | MC: ${gem['market_cap']/1_000_000:.1f}M\n"
                     message += f"Vol/MC: {vm_ratio:.2f} | ATH: -{ath_drop:.0f}%\n"
                     if gem.get('analysis'):
-                        message += f"Analisis: {gem['analysis'][:150]}...\n\n"
-                    else:
-                        message += "\n"
+                        message += f"Analisis: {gem['analysis'][:150]}...\n"
+                    coin_id = gem.get('coin_id', gem['symbol'].lower())
+                    message += f"[CoinGecko](https://www.coingecko.com/en/coins/{coin_id}) | [CoinMarketCap](https://coinmarketcap.com/currencies/{coin_id})\n\n"
 
                     from duckscreeener.db.database import store_knowledge
                     scan_record = (
