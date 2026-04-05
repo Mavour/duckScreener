@@ -19,10 +19,36 @@ def get_current_prices(symbols, token_addresses=None):
     """
     Fetch current prices for symbols.
     Uses CoinGecko for top coins, DexScreener per-token API for memecoins.
+    Returns dict keyed by symbol with price and source.
     """
     price_map = {}
 
-    # CoinGecko for top 250 coins
+    # DexScreener per-token API for addresses FIRST (most accurate for memecoins)
+    if token_addresses:
+        for addr in token_addresses:
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{addr}"
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    pairs = data.get('pairs') or []
+                    # Get the pair with highest liquidity
+                    if pairs:
+                        pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0) or 0))
+                        price = float(pair.get('priceUsd', 0) or 0)
+                        if price > 0:
+                            base = pair.get('baseToken', {})
+                            sym = base.get('symbol', '').upper()
+                            if sym:
+                                price_map[sym] = {
+                                    'price': price,
+                                    'source': 'dexscreener',
+                                    'address': addr,
+                                }
+            except Exception:
+                continue
+
+    # CoinGecko for top 250 coins (CEX coins)
     try:
         url = f"{COINGECKO_API_URL}/coins/markets"
         params = {
@@ -36,35 +62,13 @@ def get_current_prices(symbols, token_addresses=None):
         resp.raise_for_status()
         for coin in resp.json():
             sym = coin.get('symbol', '').upper()
-            price_map[sym] = {
-                'price': coin.get('current_price', 0),
-                'source': 'coingecko',
-            }
+            if sym and sym not in price_map:
+                price_map[sym] = {
+                    'price': coin.get('current_price', 0),
+                    'source': 'coingecko',
+                }
     except Exception as e:
         logger.warning(f"CoinGecko price fetch failed: {e}")
-
-    # DexScreener per-token API for addresses
-    if token_addresses:
-        for addr in token_addresses:
-            try:
-                url = f"https://api.dexscreener.com/latest/dex/tokens/{addr}"
-                resp = requests.get(url, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    pairs = data.get('pairs') or []
-                    if pairs:
-                        pair = pairs[0]
-                        price = float(pair.get('priceUsd', 0) or 0)
-                        if price > 0:
-                            base = pair.get('baseToken', {})
-                            sym = base.get('symbol', '').upper()
-                            if sym and sym not in price_map:
-                                price_map[sym] = {
-                                    'price': price,
-                                    'source': 'dexscreener',
-                                }
-            except Exception:
-                continue
 
     # DexScreener search fallback for symbols without address
     missing = [s for s in symbols if s not in price_map]
