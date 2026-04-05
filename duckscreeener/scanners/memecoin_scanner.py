@@ -390,6 +390,35 @@ def analyze_memecoin_potential(pairs):
         )
 
     results.sort(key=lambda x: x['score'], reverse=True)
+
+    # Check if any smart wallet is also buying these coins
+    try:
+        from duckscreeener.db.database import get_all_smart_wallets
+        from duckscreeener.scanners.smart_wallet_tracker import monitor_smart_wallets
+        smart_alerts = monitor_smart_wallets()
+        smart_wallet_buys = {}
+        for alert in smart_alerts:
+            token_addr = alert.get('token_address', '')
+            if token_addr:
+                if token_addr not in smart_wallet_buys:
+                    smart_wallet_buys[token_addr] = []
+                smart_wallet_buys[token_addr].append(alert)
+
+        for result in results:
+            addr = result.get('address', '')
+            if addr in smart_wallet_buys:
+                wallets = smart_wallet_buys[addr]
+                wallet_names = [f"{w['wallet'][:16]}... (WR: {w['wallet_wr']:.1f}%)" for w in wallets[:3]]
+                result['smart_wallet_note'] = f"Smart wallet juga beli: {', '.join(wallet_names)}"
+                result['score'] += 15  # Bonus score for smart wallet activity
+                if result['score'] >= 50:
+                    result['rating'] = 'HIGH'
+                elif result['score'] >= 30:
+                    result['rating'] = 'MEDIUM'
+    except Exception as e:
+        logger.debug(f"Smart wallet integration error: {e}")
+
+    results.sort(key=lambda x: x['score'], reverse=True)
     return results
 
 

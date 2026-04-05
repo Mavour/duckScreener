@@ -317,6 +317,8 @@ async def memecoin(update, context):
             message += f"\u2705 Signals: {'; '.join(coin['signals'][:3])}\n"
         if coin['risks']:
             message += f"\u26A0\uFE0F Risks: {'; '.join(coin['risks'][:2])}\n"
+        if coin.get('smart_wallet_note'):
+            message += f"\U0001F9E0 {coin['smart_wallet_note']}\n"
 
         message += f"\U0001F517 [DexScreener]({coin['dex_screener_url']}) | [GMGN]({coin['gmgn_url']})\n\n"
 

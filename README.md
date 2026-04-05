@@ -219,6 +219,10 @@ python -m duckscreeener.main
 | `/backtest` | Cek performa sinyal hari ini |
 | `/health` | Status bot |
 | `/set_lang <en|id>` | Ganti bahasa |
+| `/smartwallets` | List tracked smart wallets |
+| `/smartwallet_add <addr>` | Tambah smart wallet manual |
+| `/smartwallet_remove <addr>` | Hapus smart wallet |
+| `/smartwallet_discover` | Trigger discovery wallet baru |
 
 ### Natural Language (tanpa command)
 
@@ -241,11 +245,13 @@ duckscreeener/
 ├── services/
 │   └── external_apis.py    # API clients
 ├── scanners/
-│   ├── coin_scanner.py     # CEX whale detection
-│   ├── memecoin_scanner.py # Memecoin scanner
-│   └── backtest.py         # Backtest engine
+│   ├── coin_scanner.py         # CEX whale detection
+│   ├── memecoin_scanner.py     # Memecoin scanner
+│   ├── smart_wallet_tracker.py # Smart wallet discovery & monitoring
+│   └── backtest.py             # Backtest engine
 ├── handlers/
-│   └── commands.py         # Telegram handlers
+│   ├── commands.py             # Main Telegram handlers
+│   └── smart_wallet_handlers.py # Smart wallet commands
 ├── scheduler/
 │   └── tasks.py            # Scheduled tasks
 ├── agent/
