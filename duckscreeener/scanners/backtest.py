@@ -169,7 +169,7 @@ def run_backtest(chat_id=None):
         success_count = 0
         failure_count = 0
         pending_count = 0
-        report_lines = []
+        report_by_source = {}
 
         for symbol, sig in symbol_signals.items():
             entry_price = sig['entry_price']
@@ -205,11 +205,13 @@ def run_backtest(chat_id=None):
             source = sig.get('source_type', '?')
             sig_type = sig.get('signal_type', '')
 
-            emoji = "" if status == "SUCCESS" else ("" if status == "FAILED" else "")
-            report_lines.append(
-                f"{emoji} *{symbol}* ({ts}) [{source}/{sig_type}]\n"
+            if source not in report_by_source:
+                report_by_source[source] = []
+
+            report_by_source[source].append(
+                f"*{symbol}* ({ts}) [{sig_type}]\n"
                 f"Entry: {entry_str} -> Current: {current_str}\n"
-                f"Change: {'+' if change_pct > 0 else ''}{change_pct:.1f}% - {status}\n"
+                f"Change: {'+' if change_pct > 0 else ''}{change_pct:.1f}% - {status}"
             )
 
         if success_count == 0 and failure_count == 0 and pending_count == 0:
@@ -217,6 +219,13 @@ def run_backtest(chat_id=None):
 
         total = success_count + failure_count + pending_count
         win_rate = (success_count / (success_count + failure_count) * 100) if (success_count + failure_count) > 0 else 0
+
+        source_labels = {
+            'scan': 'CEX Spot — Whale Accumulation',
+            'memecoin': 'Memecoin — New Launch',
+            'gmgn': 'GMGN — Smart Money',
+            'solana': 'Solana — On-Chain',
+        }
 
         report = f"BACKTEST REPORT\n"
         report += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
@@ -231,9 +240,14 @@ def run_backtest(chat_id=None):
                 report += f"- {p['signal_type']} ({p['source_type']}): {p['win_rate']:.0f}% WR, avg {p['avg_change']:+.1f}% ({p['total']} signals)\n"
             report += "\n"
 
-        report += "Recent Signals:\n"
-        report += "\n".join(report_lines)
-        report += "\n\nUse /backtest anytime to check performance"
+        # Grouped signals by source
+        for source, lines in report_by_source.items():
+            label = source_labels.get(source, source.upper())
+            report += f"── {label} ──\n"
+            report += "\n".join(lines)
+            report += "\n\n"
+
+        report += "Use /backtest anytime to check performance"
 
         return report
 
