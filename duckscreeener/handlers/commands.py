@@ -451,10 +451,11 @@ async def memory(update, context):
         else:
             emoji = "\U0001F4D6"
 
-        lines.append(f"{emoji} {i+1}. [{ts}] **{source}**\n{preview}...")
+        safe_source = source.replace('_', '').replace('*', '').replace('`', '').replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+        lines.append(f"{emoji} {i+1}. [{ts}] `{safe_source}`\n{preview}...")
 
     from duckscreeener.utils.message_split import send_long_message
-    await send_long_message("\n\n".join(lines), update, parse_mode="Markdown")
+    await send_long_message("\n\n".join(lines), update)
 
 
 async def health(update, context):
