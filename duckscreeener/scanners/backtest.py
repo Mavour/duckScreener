@@ -214,7 +214,7 @@ def run_backtest(chat_id=None):
             if signal_id:
                 record_outcome(signal_id, current_price, change_pct, status)
 
-            ts = datetime.fromtimestamp(sig['timestamp']).strftime("%Y-%m-%d")
+            ts = datetime.fromtimestamp(sig['timestamp']).strftime("%H:%M")
             entry_str = f"${entry_price:.6f}" if entry_price < 1 else f"${entry_price:.2f}"
             current_str = f"${current_price:.6f}" if current_price < 1 else f"${current_price:.2f}"
             source = sig.get('source_type', '?')

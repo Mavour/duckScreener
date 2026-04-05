@@ -26,7 +26,7 @@ from duckscreeener.scanners.coin_scanner import (
     scan_potential_coins, scan_gmgn_tokens,
 )
 from duckscreeener.scheduler.tasks import (
-    run_backtest_scheduler, run_daily_news_scheduler, run_daily_reset_scheduler,
+    run_backtest_scheduler, run_daily_news_scheduler,
     send_telegram_message_sync,
 )
 
@@ -256,10 +256,6 @@ def main():
         schedule_thread = threading.Thread(target=run_daily_news_scheduler, daemon=True)
         schedule_thread.start()
         log_activity("BOT_START", "Daily news scheduler thread started", "success")
-
-    reset_thread = threading.Thread(target=run_daily_reset_scheduler, daemon=True)
-    reset_thread.start()
-    log_activity("BOT_START", "Daily signal reset thread started (00:00)", "success")
 
     logger.info("Bot started...")
     log_activity("BOT_START", "Bot successfully started and polling for updates", "success")

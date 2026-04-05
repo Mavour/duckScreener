@@ -398,29 +398,3 @@ def get_user_language(user_id):
 def set_user_language(user_id, lang):
     """Set language preference for a specific user"""
     save_setting(f"user_lang_{user_id}", lang)
-
-
-def reset_daily_signals():
-    """Delete all signals and outcomes from before today.
-    Keeps backtest objective per day.
-    """
-    import time
-    db = get_db()
-    today_start = time.mktime(
-        datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timetuple()
-    )
-    # Delete old outcomes first (foreign key)
-    db.execute(
-        "DELETE FROM signal_outcomes WHERE signal_id IN "
-        "(SELECT id FROM scan_signals WHERE timestamp < ?)",
-        (today_start,)
-    )
-    # Delete old signals
-    cursor = db.execute(
-        "DELETE FROM scan_signals WHERE timestamp < ?",
-        (today_start,)
-    )
-    db.commit()
-    deleted = cursor.rowcount
-    logger.info(f"Daily reset: deleted {deleted} old signals")
-    return deleted

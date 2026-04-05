@@ -178,29 +178,3 @@ def send_daily_news():
     except Exception as e:
         logger.error(f"Error generating daily news: {e}")
         send_telegram_message_sync(SCHEDULE_CHAT_ID, f"Failed to generate daily news: {e}")
-
-
-def run_daily_reset_scheduler():
-    """Reset signals at midnight so backtest is objective per day"""
-    import time
-    import schedule
-    from duckscreeener.db.database import reset_daily_signals
-
-    logger.info("Daily signal reset scheduled for 00:00")
-
-    def reset_job():
-        try:
-            deleted = reset_daily_signals()
-            logger.info(f"Daily reset completed: {deleted} old signals deleted")
-        except Exception as e:
-            logger.error(f"Daily reset error: {e}")
-
-    schedule.every().day.at("00:00").do(reset_job)
-
-    while True:
-        try:
-            schedule.run_pending()
-            time.sleep(60)
-        except Exception as e:
-            logger.error(f"Daily reset scheduler loop error: {e}")
-            time.sleep(60)
