@@ -13,6 +13,7 @@ Telegram AI agent untuk screening crypto, deteksi whale accumulation, dan analis
 | Daily News | Ringkasan berita crypto 24 jam terakhir |
 | Knowledge Base | Belajar dari PDF, gambar, YouTube, Twitter |
 | Conversational AI | Ngobrol natural, bot paham konteks |
+| Wallet Tracker | Track smart wallet Solana untuk referensi memecoin |
 
 ## Quick Start
 
@@ -121,15 +122,6 @@ python -m duckscreeener.main
 | `LOG_DIR` | Folder untuk log | `logs` |
 | `LOG_FILE` | Nama file log | `agent_activity.log` |
 
-### Whale Alert Thresholds
-
-| Parameter | Deskripsi | Contoh |
-|---|---|---|
-| `ETH_WHALE_THRESHOLD` | Threshold whale ETH (native units) | `1000` |
-| `BSC_WHALE_THRESHOLD` | Threshold whale BNB (native units) | `500000` |
-| `SOL_WHALE_THRESHOLD` | Threshold whale SOL (native units) | `500000` |
-| `WHALE_POLL_INTERVAL` | Interval cek whale (detik) | `1800` |
-
 ### Daily News Scheduler
 
 | Parameter | Deskripsi | Contoh |
@@ -138,7 +130,7 @@ python -m duckscreeener.main
 | `SCHEDULE_HOUR` | Jam kirim news (24h format) | `8` |
 | `SCHEDULE_MINUTE` | Menit kirim news | `30` |
 | `SCHEDULE_TIMEZONE` | Timezone | `Asia/Makassar` |
-| `SCHEDULE_CHAT_ID` | Chat ID untuk kirim news | `924349486` |
+| `SCHEDULE_CHAT_ID` | Chat ID untuk kirim news | `YOUR_CHAT_ID` |
 
 ### Coin Scanner
 
@@ -148,16 +140,7 @@ python -m duckscreeener.main
 | `SCAN_INTERVAL_MINUTES` | Interval scan (menit) | `360` |
 | `SCAN_MIN_VOLUME_USD` | Minimum volume ($) | `100000` |
 | `SCAN_MIN_PRICE_CHANGE` | Minimum price change (%) | `10` |
-| `SCAN_CHAT_ID` | Chat ID untuk kirim alert | `924349486` |
-
-### Solana Scanner
-
-| Parameter | Deskripsi | Contoh |
-|---|---|---|
-| `SOLANA_ENABLED` | Aktifkan Solana scanner | `false` |
-| `SOLANA_CHAT_ID` | Chat ID untuk kirim alert | `924349486` |
-| `SOLANA_MIN_TRADE_VALUE` | Minimum trade value | `10` |
-| `SOLANA_SCAN_INTERVAL` | Interval scan (menit) | `180` |
+| `SCAN_CHAT_ID` | Chat ID untuk kirim alert | `YOUR_CHAT_ID` |
 
 ### GMGN / Memecoin Scanner
 
@@ -172,7 +155,7 @@ python -m duckscreeener.main
 | `BACKTEST_ENABLED` | Aktifkan backtest | `true` |
 | `BACKTEST_HOUR` | Jam run backtest (24h) | `22` |
 | `BACKTEST_MINUTE` | Menit run backtest | `0` |
-| `BACKTEST_CHAT_ID` | Chat ID untuk kirim report | `924349486` |
+| `BACKTEST_CHAT_ID` | Chat ID untuk kirim report | `YOUR_CHAT_ID` |
 | `BACKTEST_SUCCESS_THRESHOLD` | Threshold sukses (%) | `10` |
 | `BACKTEST_FAILURE_THRESHOLD` | Threshold gagal (%) | `-20` |
 
@@ -224,20 +207,26 @@ python -m duckscreeener.main
 |---|---|
 | `/start` | Menu utama |
 | `/summary` | Ringkasan berita crypto 24 jam |
-| `/scan` | Scan whale accumulation di CEX |
+| `/scan` | Scan whale accumulation di CEX (auto 6 jam + manual) |
 | `/memecoin` | Scan memecoin baru sebelum pump |
 | `/memecoin_ai` | Scan + AI analysis |
 | `/wallet_analyze <addr>` | Analisa wallet Solana |
+| `/wallet_scan` | Scan semua tracked wallet |
 | `/wallet_list` | List tracked wallets |
 | `/wallet_add <addr>` | Tambah wallet |
 | `/wallet_remove <addr>` | Hapus wallet |
-| `/memory` | Lihat knowledge base |
-| `/search <query>` | Cari di knowledge base |
-| `/backtest` | Cek performa sinyal |
+| `/memory` | AI rangkum semua yang sudah dipelajari |
+| `/backtest` | Cek performa sinyal hari ini |
 | `/health` | Status bot |
 | `/set_lang <en|id>` | Ganti bahasa |
-| `/learn` | Info upload PDF/gambar |
-| `/create_agent` | Buat AI agent profile |
+
+### Natural Language (tanpa command)
+
+Bot paham ngobrol biasa, contoh:
+- "cari coin yang bagus buat scalping" → jalankan `/scan`
+- "ada memecoin baru yang menarik?" → jalankan `/memecoin`
+- "apa yang kamu sudah pelajari?" → jalankan `/memory`
+- "gimana performa sinyal hari ini?" → jalankan `/backtest`
 
 ---
 
@@ -247,7 +236,7 @@ python -m duckscreeener.main
 duckscreeener/
 ├── config/settings.py      # Environment & settings
 ├── db/
-│   ├── database.py         # SQLite layer + FTS5
+│   ├── database.py         # SQLite layer + FTS5 + signals
 │   └── vector_search.py    # Semantic search
 ├── services/
 │   └── external_apis.py    # API clients
