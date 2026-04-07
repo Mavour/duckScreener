@@ -17,12 +17,14 @@ from duckscreeener.db.database import (
     store_smart_wallet, get_all_smart_wallets, delete_smart_wallet,
     cleanup_stale_wallets, store_wallet_trade, get_wallet_trade_stats,
 )
+from duckscreeener.config.settings import SOLANAFM_API_KEY
 
 logger = logging.getLogger(__name__)
 
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 SOLANA_RPC_HEADERS = {"Content-Type": "application/json"}
 DEXSCREENER_BASE = "https://api.dexscreener.com/latest/dex"
+SOLANAFM_BASE = "https://api.solana.fm/v0"
 
 # Discovery criteria
 MIN_WIN_RATE = 60
@@ -115,21 +117,43 @@ def get_trending_memecoins(limit=20):
 
 def get_top_traders(token_address, limit=20):
     """Get top traders for a token from DexScreener"""
+    return []
+
+
+def get_token_holders(mint_address, limit=15):
+    """Get recent token holders via Solana FM API"""
     try:
-        # DexScreener doesn't have a public top_traders endpoint
-        # We'll use the token info and estimate from volume/liquidity
-        # For actual wallet tracking, we rely on Solana RPC analysis
-        url = f"{DEXSCREENER_BASE}/tokens/{token_address}"
-        resp = requests.get(url, timeout=15)
+        headers = {"Accept": "application/json"}
+        if SOLANAFM_API_KEY:
+            headers["x-api-key"] = SOLANAFM_API_KEY
+
+        # Get token transfers to find recent buyers
+        url = f"{SOLANAFM_BASE}/tokens/{mint_address}/transfers"
+        params = {"limit": limit * 3, "type": "transfer"}
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+
+        wallets = set()
         if resp.status_code == 200:
             data = resp.json()
-            pairs = data.get('pairs') or []
-            if pairs:
-                # Return token info, actual wallet discovery happens via RPC
-                return [{'token_address': token_address, 'pairs': len(pairs)}]
-        return []
+            results = data.get('results', [])
+            for transfer in results:
+                # Look for destination wallets (buyers)
+                dest = transfer.get('destination', '')
+                if dest and len(dest) >= 32:
+                    wallets.add(dest)
+                # Also check from addresses that aren't system programs
+                src = transfer.get('source', '')
+                if src and len(src) >= 32 and src not in [
+                    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                    "11111111111111111111111111111111",
+                    "ComputeBudget111111111111111111111111111111",
+                ]:
+                    wallets.add(src)
+
+        return list(wallets)[:limit]
+
     except Exception as e:
-        logger.debug(f"Token info error for {token_address}: {e}")
+        logger.debug(f"Solana FM token holders error for {mint_address}: {e}")
         return []
 
 
@@ -265,7 +289,7 @@ def discover_smart_wallets():
     """
     Main discovery loop:
     1. Get trending memecoins from DexScreener
-    2. Get recent transactions via Solana RPC
+    2. Get recent token transfers via Solana FM API (more reliable than RPC)
     3. Find early buyers from token transfers
     4. Validate wallets against strict criteria
     5. Store qualified wallets
@@ -284,30 +308,16 @@ def discover_smart_wallets():
     current_addresses = {w['address'] for w in current_wallets}
 
     for coin in trending[:10]:
-        # Get recent transactions for this token
-        txs = get_wallet_transactions(coin['address'], limit=20)
-        if not txs:
+        # Get recent token holders via Solana FM API
+        candidate_wallets = get_token_holders(coin['address'], limit=15)
+
+        if not candidate_wallets:
+            logger.info(f"  {coin['symbol']}: No holders found via Solana FM")
             continue
-
-        # Extract unique wallets from transactions
-        candidate_wallets = set()
-        for tx_info in txs[:15]:
-            sig = tx_info.get('signature', '')
-            tx = get_transaction_details(sig)
-            if not tx:
-                continue
-
-            meta = tx.get('meta', {})
-            post_tb = meta.get('postTokenBalances', [])
-            for bal in post_tb:
-                mint = bal.get('mint', '')
-                owner = bal.get('owner', '')
-                if mint == coin['address'] and owner and owner not in current_addresses:
-                    candidate_wallets.add(owner)
 
         logger.info(f"  {coin['symbol']}: {len(candidate_wallets)} candidate wallets")
 
-        for wallet_addr in list(candidate_wallets)[:5]:
+        for wallet_addr in candidate_wallets[:5]:
             if wallet_addr in current_addresses or wallet_addr in _discovered_wallets:
                 continue
 
@@ -335,6 +345,8 @@ def discover_smart_wallets():
                     f"(WR: {result['win_rate']:.1f}%, Tokens: {result['unique_tokens']}, "
                     f"Trust: {result['trust_score']:.0f}, Early: {result['early_buyer_of']})"
                 )
+            else:
+                logger.debug(f"  Wallet {wallet_addr[:20]}... did not meet criteria")
 
     # Maintenance
     cleanup_stale_wallets(
