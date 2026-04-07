@@ -120,6 +120,7 @@ def run_coin_scanner():
 
 def run_gmgn_scanner():
     from duckscreeener.scanners.memecoin_scanner import scan_new_memecoins
+    from duckscreeener.db.database import get_first_scan_time
     from datetime import datetime
     log_activity("GMGN_SCANNER", "GMGN memecoin scanner started - interval: 30 minutes")
     while True:
@@ -143,6 +144,7 @@ def run_gmgn_scanner():
                     rating_emoji = "" if alert['rating'] == 'HIGH' else ("⚡" if alert['rating'] == 'MEDIUM' else "📊")
                     message += f"{rating_emoji} [{alert['rating']}] Score: {alert['score']}\n"
                     message += f"*{alert['name']} ({alert['symbol']})*\n"
+                    message += f"\U0001F550 Scanned at: {get_first_scan_time(alert['symbol'], 'memecoin')}\n"
                     message += f"Price: {price_str} | 1h: {'+' if alert['price_change_1h'] > 0 else ''}{alert['price_change_1h']:.1f}%\n"
                     message += f"Age: {alert['age_hours']:.1f}h | Vol: {volume_str} | Liq: {liquidity_str} | MC: {mc_str}\n"
                     message += f"Narrative: {', '.join(alert.get('narrative', ['Unknown']))}\n"
