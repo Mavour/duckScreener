@@ -26,13 +26,13 @@ SOLANA_RPC_HEADERS = {"Content-Type": "application/json"}
 DEXSCREENER_BASE = "https://api.dexscreener.com/latest/dex"
 SOLANAFM_BASE = "https://api.solana.fm/v0"
 
-# Discovery criteria
-MIN_WIN_RATE = 60
-MIN_TRADE_USD = 50
-MIN_UNIQUE_TOKENS = 3
-MIN_TOTAL_TRADES = 5
-MAX_WALLETS = 50
-MAX_INACTIVE_DAYS = 7
+# Discovery criteria - adjusted for better balance between quality and quantity
+MIN_WIN_RATE = 55  # Reduced from 60 to allow more wallets while maintaining quality
+MIN_TRADE_USD = 20  # Reduced from 50 to capture smaller but meaningful trades
+MIN_UNIQUE_TOKENS = 2  # Reduced from 3 to allow wallets with focused expertise
+MIN_TOTAL_TRADES = 3  # Reduced from 5 to allow newer but performing wallets
+MAX_WALLETS = 75  # Increased from 50 to track more wallets
+MAX_INACTIVE_DAYS = 5  # Reduced from 7 to remove inactive wallets faster
 
 # Known dev/bot program IDs to exclude
 DEV_PROGRAM_IDS = {

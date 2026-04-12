@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def get_current_prices(symbols, token_addresses=None):
     """
-    Fetch current prices for symbols.
+    Fetch current prices for symbols with improved accuracy and retry logic.
     Uses CoinGecko for top coins, DexScreener per-token API for memecoins.
     Returns dict keyed by symbol with price and source.
     """
@@ -26,80 +26,109 @@ def get_current_prices(symbols, token_addresses=None):
     # DexScreener per-token API for addresses FIRST (most accurate for memecoins)
     if token_addresses:
         for addr in token_addresses:
-            try:
-                url = f"https://api.dexscreener.com/latest/dex/tokens/{addr}"
-                resp = requests.get(url, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    pairs = data.get('pairs') or []
-                    # Get the pair with highest liquidity
-                    if pairs:
-                        pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0) or 0))
-                        price = float(pair.get('priceUsd', 0) or 0)
-                        if price > 0:
-                            base = pair.get('baseToken', {})
-                            sym = base.get('symbol', '').upper()
-                            if sym:
-                                price_map[sym] = {
-                                    'price': price,
-                                    'source': 'dexscreener',
-                                    'address': addr,
-                                }
-            except Exception:
-                continue
+            for attempt in range(3):  # Retry up to 3 times
+                try:
+                    url = f"https://api.dexscreener.com/latest/dex/tokens/{addr}"
+                    resp = requests.get(url, timeout=15)  # Increased timeout
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        pairs = data.get('pairs') or []
+                        # Get the pair with highest liquidity
+                        if pairs:
+                            pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0) or 0))
+                            price = float(pair.get('priceUsd', 0) or 0)
+                            if price > 0:
+                                base = pair.get('baseToken', {})
+                                sym = base.get('symbol', '').upper()
+                                if sym:
+                                    price_map[sym] = {
+                                        'price': price,
+                                        'source': 'dexscreener',
+                                        'address': addr,
+                                    }
+                                    break  # Success, exit retry loop
+                    elif resp.status_code == 429:  # Rate limit
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        break  # Don't retry on other HTTP errors
+                except Exception as e:
+                    if attempt == 2:  # Last attempt
+                        logger.warning(f"DexScreener token fetch failed for {addr}: {e}")
+                    time.sleep(1)  # Wait before retry
 
     # CoinGecko for top 1000 coins (CEX coins) - paginate 4 pages of 250
     for page in range(1, 5):
-        try:
-            url = f"{COINGECKO_API_URL}/coins/markets"
-            params = {
-                'vs_currency': 'usd',
-                'order': 'market_cap_desc',
-                'per_page': 250,
-                'page': page,
-                'sparkline': 'false',
-            }
-            resp = requests.get(url, params=params, timeout=15)
-            resp.raise_for_status()
-            for coin in resp.json():
-                sym = coin.get('symbol', '').upper()
-                if sym and sym not in price_map:
-                    price_map[sym] = {
-                        'price': coin.get('current_price', 0),
-                        'source': 'coingecko',
-                    }
-            time.sleep(0.5)
-        except Exception as e:
-            logger.warning(f"CoinGecko page {page} fetch failed: {e}")
-            break
+        for attempt in range(3):  # Retry up to 3 times
+            try:
+                url = f"{COINGECKO_API_URL}/coins/markets"
+                params = {
+                    'vs_currency': 'usd',
+                    'order': 'market_cap_desc',
+                    'per_page': 250,
+                    'page': page,
+                    'sparkline': 'false',
+                }
+                resp = requests.get(url, params=params, timeout=20)  # Increased timeout
+                resp.raise_for_status()
+                for coin in resp.json():
+                    sym = coin.get('symbol', '').upper()
+                    if sym and sym not in price_map:
+                        price_map[sym] = {
+                            'price': coin.get('current_price', 0),
+                            'source': 'coingecko',
+                        }
+                break  # Success, exit retry loop
+            except Exception as e:
+                if attempt == 2:  # Last attempt
+                    logger.warning(f"CoinGecko page {page} fetch failed: {e}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+        time.sleep(0.5)
 
     # DexScreener search fallback for symbols without address
     missing = [s for s in symbols if s not in price_map]
     if missing:
-        for sym in missing[:10]:
-            try:
-                url = f"https://api.dexscreener.com/latest/dex/search?q={sym}+solana"
-                resp = requests.get(url, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    pairs = data.get('pairs') or []
-                    for pair in pairs:
-                        if pair.get('chainId') != 'solana':
-                            continue
-                        base = pair.get('baseToken', {})
-                        if base.get('symbol', '').upper() == sym:
-                            price = float(pair.get('priceUsd', 0) or 0)
-                            if price > 0:
-                                price_map[sym] = {
-                                    'price': price,
-                                    'source': 'dexscreener',
-                                }
-                                break
-            except Exception:
-                continue
-            time.sleep(0.3)
+        for sym in missing[:15]:  # Increased from 10 to 15
+            for attempt in range(3):  # Retry up to 3 times
+                try:
+                    url = f"https://api.dexscreener.com/latest/dex/search?q={sym}+solana"
+                    resp = requests.get(url, timeout=15)  # Increased timeout
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        pairs = data.get('pairs') or []
+                        for pair in pairs:
+                            if pair.get('chainId') != 'solana':
+                                continue
+                            base = pair.get('baseToken', {})
+                            if base.get('symbol', '').upper() == sym:
+                                price = float(pair.get('priceUsd', 0) or 0)
+                                if price > 0:
+                                    price_map[sym] = {
+                                        'price': price,
+                                        'source': 'dexscreener',
+                                    }
+                                    break  # Found price, exit pair loop
+                        if sym in price_map:
+                            break  # Found price, exit retry loop
+                    elif resp.status_code == 429:  # Rate limit
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        break  # Don't retry on other HTTP errors
+                except Exception as e:
+                    if attempt == 2:  # Last attempt
+                        logger.warning(f"DexScreener search failed for {sym}: {e}")
+                    time.sleep(1)  # Wait before retry
 
-    return price_map
+    # Price validation - filter out obviously wrong prices
+    validated_map = {}
+    for sym, data in price_map.items():
+        price = data['price']
+        # Basic sanity check: price should be positive and not astronomically high/low
+        if price > 0 and price < 1000000:  # Less than $1M per token
+            validated_map[sym] = data
+        else:
+            logger.warning(f"Filtered out invalid price for {sym}: ${price}")
+
+    return validated_map
 
 
 def extract_entry_price_from_text(text):

@@ -287,15 +287,22 @@ def analyze_memecoin_potential(pairs):
         change_1h = pair['price_change_1h']
         change_6h = pair['price_change_6h']
 
-        if age < 2:
-            score += 30
+        # More nuanced scoring for age - very new tokens get highest score but with risk penalty
+        if age < 1:
+            score += 25
+            signals.append("Extremely new (< 1h) - highest risk/reward")
+        elif age < 2:
+            score += 20
             signals.append("Very new (< 2h) - early opportunity")
         elif age < 6:
-            score += 20
+            score += 15
             signals.append("New (< 6h) - still early")
         elif age < 12:
             score += 10
             signals.append("Relatively new (< 12h)")
+        elif age < 24:
+            score += 5
+            signals.append("Moderately aged (< 24h)")
 
         if vol_liq_ratio > 2:
             score += 25

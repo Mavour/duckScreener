@@ -117,16 +117,17 @@ def scan_potential_coins():
             is_accumulation = False
             gem_type = ""
 
-            if volume_to_mcap_ratio > 0.15 and price_change_24h_abs < 8:
+            # More selective accumulation detection for higher quality signals
+            if volume_to_mcap_ratio > 0.2 and price_change_24h_abs < 5 and volume > 100000:
                 is_accumulation = True
                 gem_type = "WHALE ACCUMULATION"
-            elif volume_to_mcap_ratio > 0.1 and -10 <= price_change_24h <= 10:
+            elif volume_to_mcap_ratio > 0.15 and -5 <= price_change_24h <= 5 and volume > 75000:
                 is_accumulation = True
                 gem_type = "SILENT ACCUMULATION"
-            elif volume_to_mcap_ratio > 0.08 and 0 < price_change_24h < 15:
+            elif volume_to_mcap_ratio > 0.12 and 0 < price_change_24h < 10 and volume > 50000:
                 is_accumulation = True
                 gem_type = "EARLY MOMENTUM"
-            elif ath_drop > 60 and volume_to_mcap_ratio > 0.05 and price_change_24h > -10:
+            elif ath_drop > 50 and volume_to_mcap_ratio > 0.08 and price_change_24h > -5 and volume > 50000:
                 is_accumulation = True
                 gem_type = "DEEP VALUE + VOLUME"
 
